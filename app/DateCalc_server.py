@@ -23,7 +23,7 @@ sys.path.insert(0, BASE_DIR)
 
 from DateCalc import calculate, get_weekday
 
-app = Flask(__name__, static_folder=BASE_DIR)
+app = Flask(__name__, static_folder=None)  # 自動静的ルートを無効化（ソース露出防止）
 
 
 # ── 静的ファイル ──────────────────────────────────────────────────────────────
