@@ -52,13 +52,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt  # flask, gunicorn をインストール
-          pip install pytest               # テスト用に追加
+          pip install pytest pytest-cov    # テスト＋カバレッジ計測用に追加
 
       # ── ④ テストの実行 ────────────────────────────────────────────────────
       #      テストが失敗した場合、後続の build ジョブは実行されない
       - name: Run tests
         working-directory: ./app
-        run: pytest --tb=short -v
+        run: pytest --tb=short -v --cov=DateCalc --cov-report=term-missing --cov-fail-under=100
 
   # ── ビルドジョブ ────────────────────────────────────────────────────────────
   #    Web・Nginx 両イメージをビルドし、tar として artifact に保存する
