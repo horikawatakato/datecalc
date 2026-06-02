@@ -3,7 +3,7 @@
 日数計算を行うWebアプリケーションです。  
 AWS ECS on EC2でコンテナ運用し、GitHub ActionsによるCI/CDを構築しています。
 
-**Webアプリケーション**
+**Webアプリケーション**  
 http://ec2-3-114-247-73.ap-northeast-1.compute.amazonaws.com
 
 ---
@@ -16,7 +16,7 @@ http://ec2-3-114-247-73.ap-northeast-1.compute.amazonaws.com
 - 曜日の表示
 - 計算履歴の表示（最大8件、重複は自動排除）
 
-**テストカバレッジレポート**
+**テストカバレッジレポート**  
 https://horikawatakato.github.io/datecalc/coverage-report.html
 
 ---
