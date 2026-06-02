@@ -168,6 +168,8 @@
       border-color: var(--accent);
     }
 
+    #calcBtn { margin-left: 3rem; }
+
     .result-area {
       min-height: 5rem;
     }
@@ -271,6 +273,37 @@
     .history-item-diff.future { color: var(--future); }
     .history-item-diff.past   { color: var(--past); }
     .history-item-diff.today  { color: var(--today-col); }
+
+    /* ───────── スマホ対応 ───────── */
+    @media (max-width: 600px) {
+      body { padding: 1.5rem 0.9rem; }
+
+      header { margin-bottom: 1.8rem; }
+      h1 { font-size: 1.6rem; letter-spacing: 0.25em; }
+      .today-badge { font-size: 1.05rem; }
+
+      .input-section { padding: 1.2rem; }
+
+      /* 入力行を縦に折り返す */
+      .input-row { flex-wrap: wrap; gap: 0.8rem; }
+
+      /* 日付フィールドを横幅いっぱいに、中央寄せで余裕を持たせる */
+      .date-fields {
+        width: 100%;
+        justify-content: center;
+      }
+      .date-field-wrap input[type="text"] { padding: 0.8rem 0; }
+
+      /* ボタンは2つ横並びで均等幅・タップしやすいサイズに */
+      #calcBtn { margin-left: 0; }
+      #calcBtn, #clearInputBtn {
+        flex: 1 1 0;
+        padding: 0.8rem 0.5rem;
+      }
+
+      .result-card { padding: 1.2rem; }
+      .result-diff { font-size: 1.7rem; }
+    }
   </style>
 </head>
 <body>
@@ -297,7 +330,7 @@
           <span class="field-unit">日</span>
         </div>
       </div>
-      <button id="calcBtn" style="margin-left:3rem">計算</button>
+      <button id="calcBtn">計算</button>
       <button id="clearInputBtn">クリア</button>
     </div>
   </div>
@@ -306,7 +339,7 @@
 
   <div class="history" id="historySection" style="display:none">
     <div class="history-header">
-      
+
       <span></span><button class="clear-btn" id="clearBtn">クリア</button>
     </div>
     <ul class="history-list" id="historyList"></ul>
