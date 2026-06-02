@@ -3,6 +3,9 @@
 日数計算を行うWebアプリケーションです。  
 AWS ECS on EC2でコンテナ運用し、GitHub ActionsによるCI/CDを構築しています。
 
+**Webアプリケーション**
+http://ec2-3-114-247-73.ap-northeast-1.compute.amazonaws.com
+
 ---
 
 ## 主な機能
@@ -12,6 +15,9 @@ AWS ECS on EC2でコンテナ運用し、GitHub ActionsによるCI/CDを構築�
 - 紀元前の年は負数で入力（例：-100年1月1日 = 紀元前100年1月1日）
 - 曜日の表示
 - 計算履歴の表示（最大8件、重複は自動排除）
+
+**テストカバレッジレポート**
+https://horikawatakato.github.io/datecalc/coverage-report.html
 
 ---
 
@@ -31,6 +37,8 @@ datecalc/
 │   ├── requirements.txt        # 依存パッケージ（Flask・Gunicorn）
 │   ├── test_DateCalc.py        # ユニットテスト（pytest）
 │   └── wsgi.py                 # Gunicornエントリポイント
+├── docs/
+│   └── coverage-report.html    # テストカバレッジレポート
 ├── nginx/
 │   ├── Dockerfile              # Nginxコンテナイメージ用
 │   └── nginx.conf              # リバースプロキシ設定
