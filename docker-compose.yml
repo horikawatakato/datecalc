@@ -16,7 +16,8 @@ services:
     # ローカル起動時のフォールバックとして latest を使用
     image: ghcr.io/horikawatakato/datecalc:${IMAGE_TAG:-latest}
     environment:
-      - TZ=Asia/Tokyo    # コンテナのタイムゾーンを日本時間に設定
+      - TZ=Asia/Tokyo          # コンテナのタイムゾーンを日本時間に設定
+      - WEB_CONCURRENCY=2      # Gunicorn ワーカー数（コンテナ資源に合わせ調整）
     expose:
       - "8000"           # Nginx からのみアクセス可。外部には公開しない。
     healthcheck:
