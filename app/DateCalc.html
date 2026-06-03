@@ -168,9 +168,11 @@
       border-color: var(--accent);
     }
 
-    /* タッチ端末では「−」ボタンのみタップ後に背景を残さず元に戻す */
+    /* タッチ端末では計算・クリア・「−」ボタンのタップ後に背景を残さず元に戻す（PCのホバーは不変） */
     @media (hover: none) {
-      .bc-toggle:hover {
+      .bc-toggle:hover,
+      #calcBtn:hover,
+      #clearInputBtn:hover {
         background: transparent;
         color: var(--accent);
         border-color: var(--accent-dim);
