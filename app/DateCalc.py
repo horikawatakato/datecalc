@@ -57,9 +57,14 @@ def diff_days(target: date, today: date) -> int:
     return (target - today).days
 
 
-def describe_diff(diff: int, target: date, today: date) -> str:
+def describe_diff(diff: int, target: tuple, today: tuple) -> str:
     """
     日数差を人間が読みやすい文字列に変換する。
+
+    target / today は (天文年, 月, 日, ordinal) のタプル。
+    天文年は 0 や負数を含む連続した整数で表すため、紀元前をまたぐ
+    経過年数も正しく数えられる（紀元前1年の翌年が西暦1年＝1年経過）。
+
     365日未満 → 「N日後/前」
     365日以上 → 「N日後/前 / Y年D日後/前」
     """
@@ -72,31 +77,23 @@ def describe_diff(diff: int, target: date, today: date) -> str:
     if abs_diff < 365:
         return f"{abs_diff}日{suffix}"
 
-    # 年数の計算（from → to で何年経過したか）
-    from_date = today if diff > 0 else target
-    to_date   = target if diff > 0 else today
+    # 古い方を from、新しい方を to とする
+    from_p, to_p = (today, target) if diff > 0 else (target, today)
+    fay, fm, fd, ford = from_p
+    tay, tm, td, tord = to_p
 
-    years = to_date.year - from_date.year
+    # 経過年数（連続した天文年で計算するので紀元前↔西暦も正しく数えられる）
+    years = tay - fay
 
-    # 記念日（from_date + years年後）が to_date を超えていれば years を1減らす
-    try:
-        anniversary = from_date.replace(year=from_date.year + years)
-    except ValueError:
-        # 2月29日 → 3月1日に補正
-        anniversary = from_date.replace(year=from_date.year + years, day=28) + timedelta(days=1)
-
-    if anniversary > to_date:
+    # 記念日（from + years年後）が to を超えていれば years を1減らす
+    if _anniversary_ordinal(fay, fm, fd, years) > tord:
         years -= 1
 
-    try:
-        base = from_date.replace(year=from_date.year + years)
-    except ValueError:
-        base = from_date.replace(year=from_date.year + years, day=28) + timedelta(days=1)
-
-    remain_days = (to_date - base).days
+    base_ord = _anniversary_ordinal(fay, fm, fd, years)
+    remain_days = tord - base_ord
 
     year_part = f"{years}年"
-    day_part  = f"{remain_days}日" if remain_days > 0 else ""
+    day_part = f"{remain_days}日" if remain_days > 0 else ""
     return f"{abs_diff}日{suffix} / {year_part}{day_part}{suffix}"
 
 
@@ -157,12 +154,6 @@ def calculate(year: int, month: int, day: int, today: date) -> dict:
         target = date(astro_year, month, day)
     else:
         # Python date は年 1 以上しか扱えないため、ordinal で代替計算
-        # date(1, 1, 1).toordinal() == 1 なので、astronomical year=0 → ordinal で逆算
-        # date.fromordinal は year>=1 必須。差分だけを直接計算する。
-        # ordinal の基準: date(1, 1, 1) = 1
-        # astronomical year 0 の 1/1 = date(1,1,1) - 366日（year 0 は閏年）
-        # ここでは datetime モジュールの制約上、差分を概算で求める。
-        # 正確な計算のため proleptic ordinal を手計算する。
         target = _proleptic_date(astro_year, month, day)
 
     diff = diff_days(target, today) if isinstance(target, date) else _diff_proleptic(target, today)
@@ -172,7 +163,13 @@ def calculate(year: int, month: int, day: int, today: date) -> dict:
     date_label = f"{year_label}年{month}月{day}日({weekday})"
 
     cls = "today" if diff == 0 else ("future" if diff > 0 else "past")
-    diff_label = describe_diff(diff, target if isinstance(target, date) else today, today)
+
+    # 差分表示用に (天文年, 月, 日, ordinal) のタプルを組み立てる。
+    # 紀元前は date を作れないため astro_year と ordinal を直接使う。
+    target_ord = target.toordinal() if isinstance(target, date) else target.ordinal
+    target_parts = (astro_year, month, day, target_ord)
+    today_parts = (today.year, today.month, today.day, today.toordinal())
+    diff_label = describe_diff(diff, target_parts, today_parts)
 
     return {
         "ok": True,
@@ -228,9 +225,9 @@ def _days_in_year(year: int) -> int:
     return 366 if _is_leap(year) else 365
 
 
-def _proleptic_date(astro_year: int, month: int, day: int) -> _ProlepticDate:
+def _proleptic_ordinal(astro_year: int, month: int, day: int) -> int:
     """
-    天文年代（year <= 0 を含む）の日付を ordinal に変換する。
+    天文年代（year <= 0 を含む）の日付を proleptic Gregorian ordinal に変換する。
     date(1,1,1).toordinal() == 1 を基準とする。
 
     正しい計算式:
@@ -240,18 +237,36 @@ def _proleptic_date(astro_year: int, month: int, day: int) -> _ProlepticDate:
             astro_year=-1: 1 - 366 - 365  = -730
     """
     if astro_year >= 1:
-        return date(astro_year, month, day)
+        return date(astro_year, month, day).toordinal()
 
-    # astro_year の 1/1 の ordinal を求める
     jan1_ordinal = 1 - sum(_days_in_year(y) for y in range(astro_year, 1))
-
-    # month/day 分を加算（1/1 が jan1_ordinal なので day-1 を足す）
     days_before_month = sum(
         DAYS_IN_MONTH[m] + (1 if m == 2 and _is_leap(astro_year) else 0)
         for m in range(1, month)
     )
-    ordinal = jan1_ordinal + days_before_month + (day - 1)
-    return _ProlepticDate(ordinal)
+    return jan1_ordinal + days_before_month + (day - 1)
+
+
+def _anniversary_ordinal(astro_year: int, month: int, day: int, years: int) -> int:
+    """
+    (astro_year, month, day) の years 年後（負なら前）の記念日を ordinal で返す。
+    天文年は連続した整数なので、紀元前をまたいでも単純な加算で扱える。
+    2月29日は対象年が閏年でなければ3月1日に補正する（元実装と同じ挙動）。
+    """
+    target_year = astro_year + years
+    if month == 2 and day == 29 and not _is_leap(target_year):
+        return _proleptic_ordinal(target_year, 3, 1)
+    return _proleptic_ordinal(target_year, month, day)
+
+
+def _proleptic_date(astro_year: int, month: int, day: int) -> "_ProlepticDate | date":
+    """
+    天文年代（year <= 0 を含む）の日付を表すオブジェクトを返す。
+    year >= 1 は通常の date、それ以外は _ProlepticDate（ordinal 保持）。
+    """
+    if astro_year >= 1:
+        return date(astro_year, month, day)
+    return _ProlepticDate(_proleptic_ordinal(astro_year, month, day))
 
 
 def _diff_proleptic(target, today: date) -> int:
