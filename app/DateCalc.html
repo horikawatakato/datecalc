@@ -170,6 +170,9 @@
 
     #calcBtn { margin-left: 3rem; }
 
+    /* 符号トグル（スマホのみ表示／計算・クリアと同じ配色） */
+    .bc-toggle { display: none; }
+
     .result-area {
       min-height: 5rem;
     }
@@ -287,14 +290,21 @@
       /* 入力行を縦に折り返す */
       .input-row { flex-wrap: wrap; gap: 0.8rem; }
 
-      /* 日付フィールドを横幅いっぱいに、中央寄せで余裕を持たせる */
+      /* 日付フィールドを横幅いっぱいに、左寄せにする */
       .date-fields {
         width: 100%;
-        justify-content: center;
+        justify-content: flex-start;
       }
       .date-field-wrap input[type="text"] { padding: 0.8rem 0; }
 
-      /* ボタンは2つ横並びで均等幅・タップしやすいサイズに */
+      /* 紀元前トグルをスマホで表示 */
+      .bc-toggle {
+        display: inline-block;
+        padding: 0.8rem 0.9rem;
+        white-space: nowrap;
+      }
+
+      /* ボタンは横並びで均等幅・タップしやすいサイズに */
       #calcBtn { margin-left: 0; }
       #calcBtn, #clearInputBtn {
         flex: 1 1 0;
@@ -318,7 +328,7 @@
     <div class="input-row">
       <div class="date-fields">
         <div class="date-field-wrap">
-          <input type="text" id="yearInput"  inputmode="text" maxlength="4" placeholder="" autocomplete="off" spellcheck="false">
+          <input type="text" id="yearInput"  inputmode="numeric" maxlength="4" placeholder="" autocomplete="off" spellcheck="false">
           <span class="field-unit">年</span>
         </div>
         <div class="date-field-wrap">
@@ -330,6 +340,7 @@
           <span class="field-unit">日</span>
         </div>
       </div>
+      <button type="button" id="bcToggle" class="bc-toggle">−</button>
       <button id="calcBtn">計算</button>
       <button id="clearInputBtn">クリア</button>
     </div>
@@ -380,6 +391,43 @@
   const calcBtn        = document.getElementById('calcBtn');
   const clearInputBtn  = document.getElementById('clearInputBtn');
   const clearBtn       = document.getElementById('clearBtn');
+  const bcToggle       = document.getElementById('bcToggle');
+
+  // ── 符号トグル状態をボタンに反映 ─────────────────────────────────────────
+  function syncBcToggle() {
+    bcToggle.classList.toggle('active', yearInput.value.startsWith('-'));
+  }
+
+  // ── 年フィールドの正規化（PC入力時の input ハンドラと同一処理） ──────────
+  //   先頭のマイナス1つ ＋ 数字のみ、先頭ゼロ除去
+  function normalizeYearValue() {
+    let v = yearInput.value;
+    const neg = v.startsWith('-');
+    let digits = v.replace(/[^\d]/g, '').replace(/^0+/, '');
+    // maxlength=4 を符号込みで再現（負号があるときは数字3桁まで）
+    const maxDigits = neg ? 3 : 4;
+    if (digits.length > maxDigits) digits = digits.slice(0, maxDigits);
+    v = (neg ? '-' : '') + digits;
+    if (yearInput.value !== v) yearInput.value = v;
+  }
+
+  // ── 年フィールドの範囲補正（PC入力時の blur ハンドラと同一処理） ──────────
+  function clampYearValue() {
+    const val = parseInt(yearInput.value, 10);
+    if (isNaN(val) || val === 0) { yearInput.value = ''; return; }
+    if (val > 9999)  { yearInput.value = '9999'; return; }
+    if (val < -999)  { yearInput.value = '-999'; return; }
+  }
+
+  // ── − ボタン：符号を切り替えたうえで、PCと同じ正規化・補正を通す ──────────
+  bcToggle.addEventListener('click', () => {
+    const digits = yearInput.value.replace('-', '');
+    yearInput.value = yearInput.value.startsWith('-') ? digits : '-' + digits;
+    normalizeYearValue();                          // PC の input 相当
+    if (/\d/.test(yearInput.value)) clampYearValue(); // 数字があるときだけ範囲補正（PCの blur 相当／単独「-」は維持）
+    syncBcToggle();
+    yearInput.focus();
+  });
 
   // ── 年フィールド：マイナス記号（先頭のみ）と数字だけを受け付ける ─────────
   yearInput.addEventListener('keydown', ev => {
@@ -395,17 +443,12 @@
     if (pos === effectiveStart && ev.key === '0') { ev.preventDefault(); return; }
   });
   yearInput.addEventListener('input', () => {
-    let v = yearInput.value;
-    const neg = v.startsWith('-');
-    let digits = v.replace(/[^\d]/g, '').replace(/^0+/, '');
-    v = (neg ? '-' : '') + digits;
-    if (yearInput.value !== v) yearInput.value = v;
+    normalizeYearValue();
+    syncBcToggle();
   });
   yearInput.addEventListener('blur', () => {
-    const val = parseInt(yearInput.value, 10);
-    if (isNaN(val) || val === 0) { yearInput.value = ''; return; }
-    if (val > 9999)  { yearInput.value = '9999'; return; }
-    if (val < -999)  { yearInput.value = '-999'; return; }
+    clampYearValue();
+    syncBcToggle();
   });
 
   // ── 月・日フィールド：数字のみ、範囲外は自動補正 ────────────────────────
@@ -527,6 +570,7 @@
     monthInput.value = '';
     dayInput.value   = '';
     resultArea.innerHTML = '';
+    syncBcToggle();
     yearInput.focus();
   });
 
