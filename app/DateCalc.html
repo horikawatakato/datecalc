@@ -168,6 +168,15 @@
       border-color: var(--accent);
     }
 
+    /* タッチ端末では「−」ボタンのみタップ後に背景を残さず元に戻す */
+    @media (hover: none) {
+      .bc-toggle:hover {
+        background: transparent;
+        color: var(--accent);
+        border-color: var(--accent-dim);
+      }
+    }
+
     #calcBtn { margin-left: 3rem; }
 
     /* 符号トグル（スマホのみ表示／計算・クリアと同じ配色） */
