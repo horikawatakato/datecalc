@@ -4,8 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>日数計算機</title>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;600&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;600&display=swap" rel="stylesheet">
   <style>
+    /* 配色・余白はすべて :root のカスタムプロパティに集約（ここを変えればテーマ全体が変わる） */
     :root {
       --bg: #ffffff;
       --surface: #f5f4f0;
@@ -134,13 +135,6 @@
     #monthInput { width: 2.2rem; }
     #dayInput   { width: 2.2rem; }
 
-    .date-sep {
-      font-family: 'Noto Sans JP', sans-serif;
-      font-size: 1.2rem;
-      color: var(--text-muted);
-      padding: 0 0.1rem;
-      user-select: none;
-    }
 
     .field-unit {
       font-family: 'Noto Sans JP', sans-serif;
@@ -241,12 +235,6 @@
       margin-bottom: 0.6rem;
     }
 
-    .history-label {
-      font-size: 0.8rem;
-      letter-spacing: 0.3em;
-      color: var(--text-muted);
-      text-transform: uppercase;
-    }
 
     .clear-btn {
       background: none;
@@ -339,15 +327,15 @@
     <div class="input-row">
       <div class="date-fields">
         <div class="date-field-wrap">
-          <input type="text" id="yearInput"  inputmode="numeric" maxlength="4" placeholder="" autocomplete="off" spellcheck="false">
+          <input type="text" id="yearInput"  inputmode="numeric" maxlength="4" autocomplete="off" spellcheck="false">
           <span class="field-unit">年</span>
         </div>
         <div class="date-field-wrap">
-          <input type="text" id="monthInput" inputmode="numeric" maxlength="2" placeholder="" autocomplete="off" spellcheck="false">
+          <input type="text" id="monthInput" inputmode="numeric" maxlength="2" autocomplete="off" spellcheck="false">
           <span class="field-unit">月</span>
         </div>
         <div class="date-field-wrap">
-          <input type="text" id="dayInput"   inputmode="numeric" maxlength="2" placeholder="" autocomplete="off" spellcheck="false">
+          <input type="text" id="dayInput"   inputmode="numeric" maxlength="2" autocomplete="off" spellcheck="false">
           <span class="field-unit">日</span>
         </div>
       </div>
@@ -361,7 +349,7 @@
 
   <div class="history" id="historySection" style="display:none">
     <div class="history-header">
-
+      <!-- 左の空 span は space-between でクリアボタンを右端へ寄せるためのスペーサー -->
       <span></span><button class="clear-btn" id="clearBtn">クリア</button>
     </div>
     <ul class="history-list" id="historyList"></ul>
@@ -372,9 +360,9 @@
   // ─────────────────────────────────────────────────────────────────────────
   // DateCalc.html — Python API 呼び出し版
   //
-  // calculate() 関数のみを fetch(/api/calculate) に差し替え、
-  // 計算ロジックをすべて DateCalc.py (Flask サーバー) 側で処理します。
-  // UI・入力バリデーション・フォーカス移動は元の実装をそのまま維持します。
+  // このページ自身は日付計算を持たない。年月日を /api/calculate へ送り、
+  // 計算は DateCalc.py (Flask サーバー) 側で行い、その結果を表示するだけ。
+  // 画面・入力バリデーション・フォーカス移動・履歴表示はこのファイルが担当する。
   // ─────────────────────────────────────────────────────────────────────────
 
   // ── 今日の表示（Python API から取得） ────────────────────────────────────
@@ -385,9 +373,10 @@
         `今日 — ${t.year}年${t.month}月${t.day}日(${t.weekday})`;
     })
     .catch(() => {
-      // サーバーに繋がらない場合はブラウザ側の日付でフォールバック
+      // サーバーに繋がらない場合は、ブラウザのローカル日付で代替表示する
       const WEEKDAYS = ["月","火","水","木","金","土","日"];
       const d = new Date();
+      // getDay() は 日曜=0。月曜始まりの WEEKDAYS に合わせて添字をずらす
       const wd = WEEKDAYS[d.getDay() === 0 ? 6 : d.getDay() - 1];
       document.getElementById('todayBadge').textContent =
         `今日 — ${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日(${wd})`;
@@ -403,11 +392,6 @@
   const clearInputBtn  = document.getElementById('clearInputBtn');
   const clearBtn       = document.getElementById('clearBtn');
   const bcToggle       = document.getElementById('bcToggle');
-
-  // ── 符号トグル状態をボタンに反映 ─────────────────────────────────────────
-  function syncBcToggle() {
-    bcToggle.classList.toggle('active', yearInput.value.startsWith('-'));
-  }
 
   // ── 年フィールドの正規化（PC入力時の input ハンドラと同一処理） ──────────
   //   先頭のマイナス1つ ＋ 数字のみ、先頭ゼロ除去
@@ -436,7 +420,6 @@
     yearInput.value = yearInput.value.startsWith('-') ? digits : '-' + digits;
     normalizeYearValue();                          // PC の input 相当
     if (/\d/.test(yearInput.value)) clampYearValue(); // 数字があるときだけ範囲補正（PCの blur 相当／単独「-」は維持）
-    syncBcToggle();
     yearInput.focus();
   });
 
@@ -455,11 +438,9 @@
   });
   yearInput.addEventListener('input', () => {
     normalizeYearValue();
-    syncBcToggle();
   });
   yearInput.addEventListener('blur', () => {
     clampYearValue();
-    syncBcToggle();
   });
 
   // ── 月・日フィールド：数字のみ、範囲外は自動補正 ────────────────────────
@@ -521,8 +502,8 @@
   function renderHistory() {
     if (history.length === 0) { historySection.style.display = 'none'; return; }
     historySection.style.display = 'block';
-    historyList.innerHTML = history.map((h, i) => `
-      <li class="history-item" data-index="${i}">
+    historyList.innerHTML = history.map(h => `
+      <li class="history-item">
         <span class="history-item-date">${h.dateStr}</span>
         <span class="history-item-diff ${h.cls}">${h.diffLabel}</span>
       </li>`).join('');
@@ -558,7 +539,7 @@
         </div>`;
 
       // 履歴に追加（重複は先頭に移動、最大 8 件）
-      const entry = { dateStr: data.date_label, diff: data.diff, diffLabel: data.diff_label, cls: data.cls };
+      const entry = { dateStr: data.date_label, diffLabel: data.diff_label, cls: data.cls };
       history = [entry, ...history.filter(h => h.dateStr !== entry.dateStr)].slice(0, 8);
       renderHistory();
 
@@ -581,7 +562,6 @@
     monthInput.value = '';
     dayInput.value   = '';
     resultArea.innerHTML = '';
-    syncBcToggle();
     yearInput.focus();
   });
 

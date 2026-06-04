@@ -56,11 +56,11 @@ def test_parse_year():
 
 
 def test_parse_month_or_day():
-    assert D.parse_month_or_day("6") == 6
-    assert D.parse_month_or_day("99") == 99
-    assert D.parse_month_or_day("abc") is None
-    assert D.parse_month_or_day("0") is None
-    assert D.parse_month_or_day("100") is None
+    assert D.parse_month_or_day("6", 1, 99) == 6
+    assert D.parse_month_or_day("99", 1, 99) == 99
+    assert D.parse_month_or_day("abc", 1, 99) is None
+    assert D.parse_month_or_day("0", 1, 99) is None
+    assert D.parse_month_or_day("100", 1, 99) is None
     assert D.parse_month_or_day("5", min_val=10, max_val=20) is None
 
 
@@ -192,17 +192,13 @@ def test_anniversary_ordinal():
 
 
 def test_proleptic_date():
-    d = D._proleptic_date(2026, 6, 3)
-    assert isinstance(d, date)
-    assert d == date(2026, 6, 3)
+    # 天文年0以下のときのみ呼ばれ、常に _ProlepticDate（通日保持）を返す
     pd = D._proleptic_date(0, 1, 1)
     assert isinstance(pd, D._ProlepticDate)
     assert pd.ordinal == -365
-
-
-def test_diff_proleptic():
-    pd = D._proleptic_date(0, 1, 1)
-    assert D._diff_proleptic(pd, date(1, 1, 1)) == -365 - 1
+    pd2 = D._proleptic_date(-1, 1, 1)
+    assert isinstance(pd2, D._ProlepticDate)
+    assert pd2.ordinal == -730
 
 
 def test_weekday_proleptic():
@@ -210,20 +206,12 @@ def test_weekday_proleptic():
     assert D._weekday_proleptic(D._ProlepticDate(2)) == "火"
 
 
-def test_proleptic_date_dunders():
+def test_proleptic_date_sub():
     a = D._ProlepticDate(100)
-    b = D._ProlepticDate(150)
-    assert (b - a) == timedelta(days=50)
+    # _ProlepticDate - date → 通日差（timedelta）
     assert (a - date(1, 1, 1)) == timedelta(days=99)
+    # date 以外との減算は NotImplemented を返す
     assert a.__sub__("x") is NotImplemented
-    assert (date(1, 1, 1) - a) == timedelta(days=1 - 100)
-    assert a.__rsub__("x") is NotImplemented
-    assert (a < b) is True
-    assert (a < date(1, 1, 1)) is False
-    assert a.__lt__("x") is NotImplemented
-    assert (b > a) is True
-    assert (a > date(1, 1, 1)) is True
-    assert a.__gt__("x") is NotImplemented
 
 
 def test_print_result_ok(capsys):
