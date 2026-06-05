@@ -1,14 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 680 700" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 534 830.4" role="img" aria-labelledby="title desc">
 <title id="title">コンテナ構成図</title>
 <desc id="desc">ブラウザのリクエストが、AWS ECS on EC2 の中にある Nginx コンテナと Web コンテナを通り、DateCalc.py の計算結果が返るまでの流れを示した図</desc>
 <style>
-  text{font-family:'Helvetica Neue',Arial,'Hiragino Kaku Gothic ProN','Hiragino Sans',Meiryo,'Noto Sans JP',sans-serif;}
+  text{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic',Meiryo,'Noto Sans CJK JP','Noto Sans JP',sans-serif;}
   .th{font-size:14px;font-weight:500;}
   .ts{font-size:12px;font-weight:400;}
 </style>
 
-<rect x="0" y="0" width="680" height="700" fill="#ffffff"/>
+<rect x="0" y="0" width="534" height="830.4" fill="#ffffff"/>
 
+<g transform="translate(-175 -39.8) scale(1.3)">
 <rect x="150" y="122" width="380" height="456" rx="10" fill="#EF9F27" fill-opacity="0.10" stroke="#EF9F27" stroke-width="1.5"/>
 <rect x="182" y="154" width="316" height="106" rx="8" fill="#1D9E75" fill-opacity="0.12" stroke="#1D9E75" stroke-width="1.4"/>
 <rect x="182" y="292" width="316" height="266" rx="8" fill="#1D9E75" fill-opacity="0.12" stroke="#1D9E75" stroke-width="1.4"/>
@@ -34,27 +35,28 @@
 <line x1="340" y1="526" x2="340" y2="612" stroke="#1F2328" stroke-width="1.8"/>
 <path d="M334 603 L340 612 L346 603" fill="none" stroke="#1F2328" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
 
-<rect x="198" y="46" width="284" height="42" rx="6" fill="#ffffff" stroke="#1F2328" stroke-width="1.6"/>
-<text class="th" x="214" y="63" fill="#1F2328">ブラウザ（ユーザー）</text>
-<text class="ts" x="214" y="79" fill="#1F2328">日付を入力して送信する</text>
+<rect x="209" y="46" width="262" height="42" rx="6" fill="#ffffff" stroke="#1F2328" stroke-width="1.6"/>
+<text class="th" x="225" y="63" fill="#1F2328">ブラウザ（DateCalc.html）</text>
+<text class="ts" x="225" y="79" fill="#1F2328">日付を入力して送信</text>
 
-<rect x="198" y="186" width="284" height="42" rx="6" fill="#ffffff" stroke="#1F2328" stroke-width="1.6"/>
-<text class="th" x="214" y="203" fill="#1F2328">Nginx（nginx.conf）</text>
-<text class="ts" x="214" y="219" fill="#1F2328">リクエストを受信してWebコンテナへ送信する</text>
+<rect x="209" y="186" width="262" height="42" rx="6" fill="#ffffff" stroke="#1F2328" stroke-width="1.6"/>
+<text class="th" x="225" y="203" fill="#1F2328">Nginx（nginx.conf）</text>
+<text class="ts" x="225" y="219" fill="#1F2328">リクエストを受信してWebコンテナへ送信</text>
 
-<rect x="198" y="324" width="284" height="42" rx="6" fill="#ffffff" stroke="#1F2328" stroke-width="1.6"/>
-<text class="th" x="214" y="341" fill="#1F2328">Gunicorn（wsgi.py）</text>
-<text class="ts" x="214" y="357" fill="#1F2328">Flaskを起動して実行する</text>
+<rect x="209" y="324" width="262" height="42" rx="6" fill="#ffffff" stroke="#1F2328" stroke-width="1.6"/>
+<text class="th" x="225" y="341" fill="#1F2328">Gunicorn（wsgi.py）</text>
+<text class="ts" x="225" y="357" fill="#1F2328">Flaskを起動して実行</text>
 
-<rect x="198" y="404" width="284" height="42" rx="6" fill="#ffffff" stroke="#1F2328" stroke-width="1.6"/>
-<text class="th" x="214" y="421" fill="#1F2328">Flask（DateCalc_server.py）</text>
-<text class="ts" x="214" y="437" fill="#1F2328">リクエストを計算ロジックへ送信する</text>
+<rect x="209" y="404" width="262" height="42" rx="6" fill="#ffffff" stroke="#1F2328" stroke-width="1.6"/>
+<text class="th" x="225" y="421" fill="#1F2328">Flask（DateCalc_server.py）</text>
+<text class="ts" x="225" y="437" fill="#1F2328">リクエストを計算ロジックへ送信</text>
 
-<rect x="198" y="484" width="284" height="42" rx="6" fill="#ffffff" stroke="#1F2328" stroke-width="1.6"/>
-<text class="th" x="214" y="501" fill="#1F2328">計算ロジック（DateCalc.py）</text>
-<text class="ts" x="214" y="517" fill="#1F2328">日付の差分を計算して結果を返す</text>
+<rect x="209" y="484" width="262" height="42" rx="6" fill="#ffffff" stroke="#1F2328" stroke-width="1.6"/>
+<text class="th" x="225" y="501" fill="#1F2328">計算ロジック（DateCalc.py）</text>
+<text class="ts" x="225" y="517" fill="#1F2328">日付の差分を計算して結果を応答</text>
 
-<rect x="198" y="612" width="284" height="42" rx="6" fill="#ffffff" stroke="#1F2328" stroke-width="1.6"/>
-<text class="th" x="214" y="629" fill="#1F2328">ブラウザ（ユーザー）</text>
-<text class="ts" x="214" y="645" fill="#1F2328">計算結果が表示される</text>
+<rect x="209" y="612" width="262" height="42" rx="6" fill="#ffffff" stroke="#1F2328" stroke-width="1.6"/>
+<text class="th" x="225" y="629" fill="#1F2328">ブラウザ（DateCalc.html）</text>
+<text class="ts" x="225" y="645" fill="#1F2328">計算結果を表示</text>
+</g>
 </svg>
