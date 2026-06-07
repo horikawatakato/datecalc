@@ -47,8 +47,7 @@ datecalc/
 ├── README.md                   # プロジェクト説明
 ├── cicd-workflow.svg           # CI/CDワークフロー図
 ├── container-architecture.svg  # コンテナ構成図
-├── docker-compose.yml          # コンテナ構成定義
-└── init-letsencrypt.sh         # 証明書取得ブートストラップスクリプト
+└── docker-compose.yml          # コンテナ構成定義
 ```
 
 ---
