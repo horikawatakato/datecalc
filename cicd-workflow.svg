@@ -1,50 +1,47 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="556" height="1200" viewBox="0 0 556 1200" version="1.1">
-<rect x="0" y="0" width="556" height="1200" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="556" height="1128" viewBox="0 0 556 1128" version="1.1">
+<rect x="0" y="0" width="556" height="1128" fill="#ffffff"/>
 <rect x="20" y="20" width="516" height="70" rx="4" fill="#1f3a5f" stroke="#1f3a5f" stroke-width="2"/>
 <text x="278.0" y="52" font-size="22" fill="#ffffff" font-weight="bold" text-anchor="middle" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">トリガー</text>
 <text x="278.0" y="76" font-size="15" fill="#dde6f2" font-weight="normal" text-anchor="middle" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">on: push(main) / pull_request(main)</text>
 <line x1="278" y1="90" x2="278" y2="137" stroke="#555555" stroke-width="2.5"/>
 <polygon points="271,137 285,137 278,150" fill="#555555"/>
-<rect x="20" y="150" width="516" height="676" rx="10" fill="#dde6f2" stroke="#4a6fa5" stroke-width="2"/>
+<rect x="20" y="150" width="516" height="654" rx="10" fill="#dde6f2" stroke="#4a6fa5" stroke-width="2"/>
 <text x="38" y="186" font-size="16" fill="#1f3a5f" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif"><tspan font-weight="bold">concurrency</tspan><tspan font-weight="normal"> グループ </tspan><tspan font-weight="bold">ci-*</tspan><tspan font-weight="normal">（</tspan><tspan font-weight="bold">cancel-in-progress: true</tspan><tspan font-weight="normal">）</tspan></text>
 <rect x="38" y="200" width="480" height="156" rx="8" fill="#eef3fa" stroke="#4a6fa5" stroke-width="1.6"/>
 <text x="56" y="230" font-size="17" fill="#1a1a1a" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif"><tspan font-weight="bold">test</tspan></text>
 <line x1="56" y1="244" x2="500" y2="244" stroke="#4a6fa5" stroke-width="1"/>
-<text x="56" y="268" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">1. チェックアウト</text>
-<text x="56" y="290" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">2. Python 3.14 をセットアップ</text>
-<text x="56" y="312" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">3. 依存関係をインストール</text>
-<text x="56" y="334" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">4. pytest を実行</text>
+<text x="56" y="268" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">1. リポジトリをチェックアウト</text>
+<text x="56" y="290" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">2. Python 3.14をセットアップ（pipキャッシュ）</text>
+<text x="56" y="312" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">3. requirements.txt + pytestをインストール</text>
+<text x="56" y="334" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">4. pytest実行（カバレッジ100%必須）</text>
 <line x1="278" y1="356" x2="278" y2="403" stroke="#555555" stroke-width="2.5"/>
 <polygon points="271,403 285,403 278,416" fill="#555555"/>
 <rect x="38" y="416" width="480" height="178" rx="8" fill="#eef3fa" stroke="#4a6fa5" stroke-width="1.6"/>
 <text x="56" y="446" font-size="17" fill="#1a1a1a" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif"><tspan font-weight="bold">build</tspan><tspan font-weight="normal">（needs: test）</tspan></text>
 <line x1="56" y1="460" x2="500" y2="460" stroke="#4a6fa5" stroke-width="1"/>
-<text x="56" y="484" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">5. チェックアウト</text>
-<text x="56" y="506" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">6. metadata 生成（web / nginx）</text>
-<text x="56" y="528" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">7. Buildx をセットアップ</text>
-<text x="56" y="550" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">8. イメージを tar 出力</text>
-<text x="56" y="572" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">9. artifact アップロード（pull_request時スキップ）</text>
+<text x="56" y="484" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">5. リポジトリをチェックアウト</text>
+<text x="56" y="506" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">6. web / nginxのタグ・ラベルを生成</text>
+<text x="56" y="528" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">7. Docker Buildxをセットアップ</text>
+<text x="56" y="550" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">8. web / nginxをbuild → tar出力（pushせず）</text>
+<text x="56" y="572" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">9. tarをartifactにアップロード（PR時スキップ）</text>
 <line x1="278" y1="594" x2="278" y2="641" stroke="#555555" stroke-width="2.5"/>
 <polygon points="271,641 285,641 278,654" fill="#555555"/>
-<rect x="38" y="654" width="480" height="156" rx="8" fill="#eef3fa" stroke="#4a6fa5" stroke-width="1.6"/>
+<rect x="38" y="654" width="480" height="134" rx="8" fill="#eef3fa" stroke="#4a6fa5" stroke-width="1.6"/>
 <text x="56" y="684" font-size="17" fill="#1a1a1a" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif"><tspan font-weight="bold">push</tspan><tspan font-weight="normal">（needs: build / pull_request時スキップ）</tspan></text>
 <line x1="56" y1="698" x2="500" y2="698" stroke="#4a6fa5" stroke-width="1"/>
-<text x="56" y="722" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">10. GHCR ログイン</text>
-<text x="56" y="744" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">11. artifact ダウンロード</text>
-<text x="56" y="766" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">12. GHCR へ push → digest 取得</text>
-<text x="56" y="788" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">13. tags / digest をサマリー出力</text>
-<line x1="278" y1="826" x2="278" y2="873" stroke="#555555" stroke-width="2.5"/>
-<polygon points="271,873 285,873 278,886" fill="#555555"/>
-<rect x="20" y="886" width="516" height="294" rx="10" fill="#fbe9cf" stroke="#d99633" stroke-width="2"/>
-<text x="38" y="922" font-size="16" fill="#8a5a12" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif"><tspan font-weight="bold">concurrency</tspan><tspan font-weight="normal"> グループ </tspan><tspan font-weight="bold">deploy-*</tspan><tspan font-weight="normal">（</tspan><tspan font-weight="bold">cancel-in-progress: false</tspan><tspan font-weight="normal">）</tspan></text>
-<rect x="38" y="936" width="480" height="228" rx="8" fill="#fdf4e6" stroke="#d99633" stroke-width="1.6"/>
-<text x="56" y="966" font-size="17" fill="#1a1a1a" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif"><tspan font-weight="bold">deploy</tspan><tspan font-weight="normal">（needs: push / pull_request時スキップ）</tspan></text>
-<line x1="56" y1="980" x2="500" y2="980" stroke="#d99633" stroke-width="1"/>
-<text x="56" y="1004" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">14. チェックアウト</text>
-<text x="56" y="1026" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">15. AWS 認証（OIDC）</text>
-<text x="56" y="1048" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">16. executionRoleArn 置換</text>
-<text x="56" y="1070" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">17. タスク定義を digest 参照に更新</text>
-<text x="56" y="1092" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">18. ECS へデプロイ・安定化待機</text>
-<text x="56" y="1120" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">デプロイは manifest digest（@sha256:…）で参照</text>
-<text x="56" y="1142" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">失敗時は ECS サーキットブレーカーで自動ロールバック</text>
+<text x="56" y="722" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">10. GHCRにログイン（GITHUB_TOKEN）</text>
+<text x="56" y="744" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">11. web / nginxのtar artifactを取得 → docker load</text>
+<text x="56" y="766" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">12. 全タグをGHCRへpush → docker inspectでdigest取得</text>
+<line x1="278" y1="804" x2="278" y2="851" stroke="#555555" stroke-width="2.5"/>
+<polygon points="271,851 285,851 278,864" fill="#555555"/>
+<rect x="20" y="864" width="516" height="244" rx="10" fill="#fbe9cf" stroke="#d99633" stroke-width="2"/>
+<text x="38" y="900" font-size="16" fill="#8a5a12" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif"><tspan font-weight="bold">concurrency</tspan><tspan font-weight="normal"> グループ </tspan><tspan font-weight="bold">deploy-*</tspan><tspan font-weight="normal">（</tspan><tspan font-weight="bold">cancel-in-progress: false</tspan><tspan font-weight="normal">）</tspan></text>
+<rect x="38" y="914" width="480" height="178" rx="8" fill="#fdf4e6" stroke="#d99633" stroke-width="1.6"/>
+<text x="56" y="944" font-size="17" fill="#1a1a1a" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif"><tspan font-weight="bold">deploy</tspan><tspan font-weight="normal">（needs: push / pull_request時スキップ）</tspan></text>
+<line x1="56" y1="958" x2="500" y2="958" stroke="#d99633" stroke-width="1"/>
+<text x="56" y="982" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">13. AWS認証（OIDCでAssumeRole）</text>
+<text x="56" y="1004" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">14. push出力のweb / nginx digestを参照</text>
+<text x="56" y="1026" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">15. SSM send-commandをEC2へ送信</text>
+<text x="56" y="1048" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">16. .envにdigest固定参照を記入 → compose pull → up -d</text>
+<text x="56" y="1070" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">17. コマンド完了をポーリングし成否を判定</text>
 </svg>

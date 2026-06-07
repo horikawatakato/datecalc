@@ -1,10 +1,10 @@
 # 日数計算機
 
-日数計算を行うWebアプリケーションです。  
-AWS ECS on EC2でコンテナ運用し、GitHub ActionsによるCI/CDを構築しています。
+日数計算を行うWebアプリケーションです。HTTPSに対応しています。  
+AWS EC2上でコンテナ運用し、GitHub ActionsによるCI/CDを構築しています。
 
 **Webアプリケーション**  
-http://ec2-3-114-247-73.ap-northeast-1.compute.amazonaws.com
+https://datecalc.duckdns.org/
 
 ---
 
@@ -47,13 +47,19 @@ datecalc/
 ├── README.md                   # プロジェクト説明
 ├── cicd-workflow.svg           # CI/CDワークフロー図
 ├── container-architecture.svg  # コンテナ構成図
-├── docker-compose.yml          # コンテナ構成定義（ローカル開発用）
-└── task-definition.json        # AWS ECSタスク定義
+├── docker-compose.yml          # コンテナ構成定義
+└── init-letsencrypt.sh         # 証明書取得ブートストラップスクリプト
 ```
 
 ---
 
 ## コンテナ構成
+
+| コンテナ | 役割 | ポート |
+|---|---|---|
+| **nginx** | ・リバースプロキシかつTLS終端<br>・HTTPSを復号してwebコンテナへ転送し、HTTPはHTTPSへリダイレクト<br>・証明書反映のため6時間ごとに自動リロード（80ポート） | 443 / 80 |
+| **web** | ・アプリ本体（Gunicorn + Flask）<br>・日数計算を処理して応答<br>・外部には非公開でnginxコンテナからのみアクセス | 8000 |
+| **certbot** | ・Let's Encrypt証明書の自動更新<br>・12時間ごとに確認し、共有ボリュームでnginxコンテナに受け渡す |  |
 
 <img src="container-architecture.svg" alt="コンテナ構成図" width="100%">
 

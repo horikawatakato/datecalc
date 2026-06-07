@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 460 648" role="img" aria-labelledby="title desc">
 <title id="title">コンテナ構成図</title>
-<desc id="desc">ブラウザのリクエストが、AWS ECS on EC2 の中にある Nginx コンテナと Web コンテナを通り、DateCalc.py の計算結果が返るまでの流れを示した図</desc>
+<desc id="desc">ブラウザのリクエストが、AWS EC2（Docker Compose 運用）の中にある Nginx コンテナと Web コンテナを通り、DateCalc.py の計算結果が返るまでの流れを示した図</desc>
 <style>
   text{font-family:'Hiragino Kaku Gothic ProN','Hiragino Sans','Yu Gothic',Meiryo,'Noto Sans CJK JP','Noto Sans JP',sans-serif;}
   .th{font-size:14px;font-weight:500;}
