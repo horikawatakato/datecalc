@@ -14,13 +14,13 @@
 <rect x="182" y="154" width="316" height="106" rx="8" fill="#1D9E75" fill-opacity="0.12" stroke="#1D9E75" stroke-width="1.4"/>
 <rect x="182" y="292" width="316" height="266" rx="8" fill="#1D9E75" fill-opacity="0.12" stroke="#1D9E75" stroke-width="1.4"/>
 
-<text class="th" x="158" y="138" fill="#B5740E">AWS ECS on EC2</text>
+<text class="th" x="158" y="138" fill="#B5740E">AWS EC2</text>
 <text class="th" x="190" y="170" fill="#0F6E56">Nginxコンテナ</text>
 <text class="th" x="190" y="308" fill="#0F6E56">Webコンテナ</text>
 
 <line x1="340" y1="88" x2="340" y2="186" stroke="#1F2328" stroke-width="1.8"/>
 <path d="M334 177 L340 186 L346 177" fill="none" stroke="#1F2328" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-<text class="th" x="348" y="142" fill="#1F2328">HTTP80</text>
+<text class="th" x="348" y="142" fill="#1F2328">HTTPS443</text>
 
 <line x1="340" y1="228" x2="340" y2="324" stroke="#1F2328" stroke-width="1.8"/>
 <path d="M334 315 L340 324 L346 315" fill="none" stroke="#1F2328" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>

@@ -7,13 +7,8 @@ on:
     branches: [main]
 
 # ── 同時実行制御（ジョブ単位で制御）──────────────────────────────────────────
-#    ワークフロー全体に cancel-in-progress: true を付けると、実行中の deploy
-#    まで巻き込んでキャンセルされる（ECS 側のロールアウトは止まらず競合するため
-#    危険）。そのため concurrency は各ジョブに個別指定する:
-#      - test / build / push : 共通グループ(ci-*)で cancel-in-progress: true。
-#          追い越された古いコミットの実行を打ち切り、最新コミットを優先する。
-#      - deploy              : 専用グループ(deploy-*)で cancel-in-progress: false。
-#          実行中はキャンセルせず、新しい実行は前のデプロイ完了まで待機（直列化）。
+#    test / build / push : 共通グループ(ci-*)で cancel-in-progress: true。
+#    deploy              : 専用グループ(deploy-*)で cancel-in-progress: false（直列化）。
 
 env:
   REGISTRY: ghcr.io
@@ -25,7 +20,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # CI 段階の共通グループ。追い越された実行はキャンセルして最新を優先
     concurrency:
       group: ci-${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true
@@ -35,39 +29,32 @@ jobs:
       id-token: none
 
     steps:
-      # ── ① コードのチェックアウト ──────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      # ── ② Python のセットアップ ───────────────────────────────────────────
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: '3.14'
-          cache: 'pip'  # pip キャッシュで依存インストールを高速化
+          cache: 'pip'
 
-      # ── ③ 依存関係のインストール ──────────────────────────────────────────
       - name: Install dependencies
         working-directory: ./app
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt  # flask, gunicorn をインストール
-          pip install pytest pytest-cov    # テスト＋カバレッジ計測用に追加
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
 
-      # ── ④ テストの実行 ────────────────────────────────────────────────────
-      #      テストが失敗した場合、後続の build ジョブは実行されない
       - name: Run tests
         working-directory: ./app
         run: pytest --tb=short -v --cov=DateCalc --cov-report=term-missing --cov-fail-under=100
 
   # ── ビルドジョブ ────────────────────────────────────────────────────────────
-  #    Web・Nginx 両イメージをビルドし、tar として artifact に保存する
-  #    GHCR への Push は行わない（PR 時もビルド確認が可能）
+  #    Web・Nginx 両イメージをビルドし、tar として artifact に保存（PR 時もビルド確認可）
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: test  # test ジョブが成功した場合のみ実行
-    # test と同一の CI グループ。追い越された実行はキャンセル
+    needs: test
     concurrency:
       group: ci-${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true
@@ -77,21 +64,13 @@ jobs:
       id-token: none
 
     outputs:
-      # push ジョブへタグを引き渡す
       web_tags:    ${{ steps.meta.outputs.tags }}
       nginx_tags:  ${{ steps.meta-nginx.outputs.tags }}
 
     steps:
-      # ── ① コードのチェックアウト ────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      # ── ② タグ・ラベルを自動生成（Web）──────────────────────────────────────
-      #      これらのタグは人間向けの参照・トレーサビリティ用途。
-      #      デプロイは下流で取得する manifest digest（@sha256:...）で行うため、
-      #      タグの桁数や可変性に依存しない。
-      #      生成タグ:
-      #        sha-<短縮SHA> / main ブランチ push → latest / PR → pr-<番号>
       - name: Extract metadata for web image
         id: meta
         uses: docker/metadata-action@v6
@@ -103,7 +82,6 @@ jobs:
             type=ref,event=pr
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
-      # ── ③ タグ・ラベルを自動生成（Nginx）────────────────────────────────────
       - name: Extract metadata for nginx image
         id: meta-nginx
         uses: docker/metadata-action@v6
@@ -114,50 +92,39 @@ jobs:
             type=ref,event=branch
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
-      # ── ④ Docker Buildx をセットアップ ──────────────────────────────────────
-      #      build-push-action の outputs: type=docker（ローカル tar 出力）に必要
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      # ── ⑤ Web イメージのビルド（単一プラットフォーム・Push なし・tar で出力）─
-      #      type=docker は単一プラットフォーム向け。docker load で読み込める
-      #      ローカル tar を生成し、push ジョブへ artifact 経由で引き渡す。
       - name: Build web image
         uses: docker/build-push-action@v7
         with:
-          context: ./app          # ビルドコンテキストは app/
-          file: ./app/Dockerfile  # Dockerfile のパスを明示
-          push: false             # このジョブでは Push しない
+          context: ./app
+          file: ./app/Dockerfile
+          push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=docker,dest=/tmp/web.tar  # ローカル tar に保存
-          # Dockerfile の ARG にビルド日時とコミットSHA を渡す
+          outputs: type=docker,dest=/tmp/web.tar
           build-args: |
             BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
             GIT_REVISION=${{ github.sha }}
 
-      # ── ⑥ Nginx イメージのビルド（単一プラットフォーム・Push なし・tar で出力）
-      #      nginx.conf を含んだカスタム Nginx イメージをビルドする
       - name: Build nginx image
         uses: docker/build-push-action@v7
         with:
-          context: ./nginx          # ビルドコンテキストは nginx/
-          file: ./nginx/Dockerfile  # Nginx 用 Dockerfile
-          push: false               # このジョブでは Push しない
+          context: ./nginx
+          file: ./nginx/Dockerfile
+          push: false
           tags: ${{ steps.meta-nginx.outputs.tags }}
-          labels: ${{ steps.meta-nginx.outputs.labels }}  # web と同様に OCI ラベルを付与
-          outputs: type=docker,dest=/tmp/nginx.tar  # ローカル tar に保存
+          labels: ${{ steps.meta-nginx.outputs.labels }}
+          outputs: type=docker,dest=/tmp/nginx.tar
 
-      # ── ⑦ ビルド済み tar を artifact としてアップロード ─────────────────────
-      #      PR 時は push ジョブがスキップされ成果物が消費されないため、
-      #      アップロード自体を行わない（ストレージの無駄を避ける）。
       - name: Upload web image artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           name: web-image
           path: /tmp/web.tar
-          retention-days: 1  # 同一ワークフローの push ジョブで消費されるため 1 日で十分
+          retention-days: 1
 
       - name: Upload nginx image artifact
         if: github.event_name != 'pull_request'
@@ -168,47 +135,39 @@ jobs:
           retention-days: 1
 
   # ── プッシュジョブ ──────────────────────────────────────────────────────────
-  #    build ジョブの artifact を取得し、Web → Nginx の順で GHCR へ Push する
-  #    PR 時はスキップ
+  #    build の artifact を取得し、Web → Nginx の順で GHCR へ Push（PR 時はスキップ）
   push:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: build  # build ジョブが成功した場合のみ実行
-    if: github.event_name != 'pull_request'  # PR 時はスキップ
-    # test/build と同一の CI グループ。追い越された実行はキャンセル
-    #（新しい実行が全タグを push し直すため、途中キャンセルでも最終的に整合する）
+    needs: build
+    if: github.event_name != 'pull_request'
     concurrency:
       group: ci-${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true
     permissions:
       contents: read
-      packages: write  # GHCR へのイメージ Push
+      packages: write
       id-token: none
 
     outputs:
-      # deploy ジョブへ、実際に push した manifest digest を引き渡す
+      # deploy ジョブへ、実際に push した不変の manifest digest を引き渡す
       web_digest:   ${{ steps.push-web.outputs.digest }}
       nginx_digest: ${{ steps.push-nginx.outputs.digest }}
 
     steps:
-      # ── ① GITHUB_TOKEN で GHCR に自動ログイン ──────────────────────────────
       - name: Login to GHCR
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}  # 追加シークレット不要
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── ② Web イメージ tar をダウンロード ────────────────────────────────────
       - name: Download web image artifact
         uses: actions/download-artifact@v7
         with:
           name: web-image
           path: /tmp
 
-      # ── ③ Web イメージを Docker にロードして GHCR へ Push ────────────────────
-      #      全タグを push 後、レジストリ上の manifest digest を取得して出力する。
-      #      同一イメージのタグはすべて同じ digest を指すため、先頭タグから取得する。
       - name: Push web image
         id: push-web
         env:
@@ -216,28 +175,23 @@ jobs:
         run: |
           set -euo pipefail
           docker load --input /tmp/web.tar
-          # build ジョブで付与したタグをすべて Push する
           echo "$WEB_TAGS" | while read -r tag; do
             [ -n "$tag" ] && docker push "$tag"
           done
-          # 先頭タグを取得（pipefail+head の SIGPIPE を避けるためパラメータ展開を使用）
+          # push 済みタグから不変の manifest digest（sha256:...）を取得して出力
           first_tag=${WEB_TAGS%%$'\n'*}
           digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$first_tag" | cut -d'@' -f2)
-          # digest が空のまま下流に渡ると不正な image 参照になるため即 fail させる
           if [ -z "$digest" ]; then
             echo "::error::web イメージの digest を取得できませんでした"; exit 1
           fi
-          echo "Web image digest: $digest"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
-      # ── ④ Nginx イメージ tar をダウンロード ──────────────────────────────────
       - name: Download nginx image artifact
         uses: actions/download-artifact@v7
         with:
           name: nginx-image
           path: /tmp
 
-      # ── ⑤ Nginx イメージを Docker にロードして GHCR へ Push ──────────────────
       - name: Push nginx image
         id: push-nginx
         env:
@@ -248,115 +202,130 @@ jobs:
           echo "$NGINX_TAGS" | while read -r tag; do
             [ -n "$tag" ] && docker push "$tag"
           done
-          # 先頭タグを取得（pipefail+head の SIGPIPE を避けるためパラメータ展開を使用）
           first_tag=${NGINX_TAGS%%$'\n'*}
           digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$first_tag" | cut -d'@' -f2)
-          # digest が空のまま下流に渡ると不正な image 参照になるため即 fail させる
           if [ -z "$digest" ]; then
             echo "::error::nginx イメージの digest を取得できませんでした"; exit 1
           fi
-          echo "Nginx image digest: $digest"
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
-      # ── ⑥ Push されたイメージの情報をサマリーに出力 ───────────────────────────
-      - name: Output image digest
-        env:
-          REGISTRY: ${{ env.REGISTRY }}
-          IMAGE_NAME: ${{ env.IMAGE_NAME }}
-          NGINX_IMAGE_NAME: ${{ env.NGINX_IMAGE_NAME }}
-          WEB_TAGS: ${{ needs.build.outputs.web_tags }}
-          NGINX_TAGS: ${{ needs.build.outputs.nginx_tags }}
-          WEB_DIGEST: ${{ steps.push-web.outputs.digest }}
-          NGINX_DIGEST: ${{ steps.push-nginx.outputs.digest }}
-        run: |
-          echo "## ✅ Images pushed to GHCR" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Registry | \`${REGISTRY}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Web Image | \`${IMAGE_NAME}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Web Tags | \`${WEB_TAGS}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Web Digest | \`${WEB_DIGEST}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Nginx Image | \`${NGINX_IMAGE_NAME}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Nginx Tags | \`${NGINX_TAGS}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Nginx Digest | \`${NGINX_DIGEST}\` |" >> $GITHUB_STEP_SUMMARY
-
-  # ── ECS デプロイジョブ ────────────────────────────────────────────────────
+  # ── デプロイジョブ（方法1: EC2 ホストへ SSM 経由でデプロイ）─────────────────
+  #    ECS は使わず、稼働中の EC2 上の docker-compose をイメージ差し替えで更新する。
+  #
+  #    前提（初回のみ手動で用意しておくこと）:
+  #      - EC2 に SSM エージェントが動作し、インスタンスプロファイルに
+  #        AmazonSSMManagedInstanceCore がアタッチされていること
+  #      - ホストの ${APP_DIR}（例 /opt/datecalc）に docker-compose.yml と init-letsencrypt.sh を配置済み
+  #        （nginx/ や app/ のソースは不要。イメージは GHCR から pull するため）
+  #      - ホストで GHCR に認証済み（private イメージの場合）。例:
+  #          echo <PAT> | docker login ghcr.io -u <user> --password-stdin
+  #        もしくは GHCR パッケージを public にしておく
+  #      - 初回の証明書取得（./init-letsencrypt.sh）が完了していること
+  #
+  #    OIDC ロール(secrets.AWS_ROLE_ARN)に必要な権限:
+  #      ssm:SendCommand / ssm:GetCommandInvocation（対象インスタンスと
+  #      AWS-RunShellScript ドキュメントに対して）
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: push  # push ジョブが成功した場合のみ実行
-    if: github.event_name != 'pull_request'  # PR 時はデプロイしない
-    # デプロイ専用グループ。実行中はキャンセルせず、後続の実行は完了まで待機（直列化）
+    timeout-minutes: 20
+    needs: push
+    if: github.event_name != 'pull_request'
     concurrency:
       group: deploy-${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: false
-
     permissions:
       contents: read
       packages: none
       id-token: write  # OIDC 認証に必要
 
     steps:
-      # ── ① コードのチェックアウト ────────────────────────────────────────────
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      # ── ② AWS 認証（OIDC）────────────────────────────────────────────────
+      # ── ① AWS 認証（OIDC）────────────────────────────────────────────────
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          # AWS_REGION は非機密情報のため Variables（vars.*）で管理する
           aws-region: ${{ vars.AWS_REGION }}
 
-      # ── ③ タスク定義のプレースホルダーを Variables の値で置換 ──────────────
-      #      task-definition.json の __EXECUTION_ROLE_ARN__ を実際の ARN に差し替える
-      #      AWSアカウントIDを含む ARN をリポジトリにハードコードしないための措置
-      - name: Inject executionRoleArn
+      # ── ② SSM Run Command で EC2 上の compose を digest 固定で入れ替え ───────
+      #      push が出力した不変の manifest digest（@sha256:...）で web/nginx を固定。
+      #      タグの上書き・再付与に左右されず、ビルドした成果物そのものを確実にデプロイする。
+      - name: Deploy to EC2 via SSM
         env:
-          EXECUTION_ROLE_ARN: ${{ vars.ECS_EXECUTION_ROLE_ARN }}
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}   # 例: i-0123456789abcdef0
+          APP_DIR:     ${{ vars.APP_DIR }}           # 例: /opt/datecalc
+          WEB_IMAGE:   ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.push.outputs.web_digest }}
+          NGINX_IMAGE: ${{ env.REGISTRY }}/${{ env.NGINX_IMAGE_NAME }}@${{ needs.push.outputs.nginx_digest }}
         run: |
           set -euo pipefail
-          # 値が未設定だとプレースホルダを空文字で置換して壊れた ARN になるため事前チェック
-          if [ -z "${EXECUTION_ROLE_ARN}" ]; then
-            echo "::error::vars.ECS_EXECUTION_ROLE_ARN が未設定です"; exit 1
+
+          # ホスト上で実行するコマンド列を JSON で組み立てる。
+          # web/nginx をそれぞれ digest 固定の参照として .env に書き出す。
+          cat > params.json <<JSON
+          {
+            "commands": [
+              "set -euo pipefail",
+              "cd ${APP_DIR}",
+              "echo WEB_IMAGE=${WEB_IMAGE} > .env",
+              "echo NGINX_IMAGE=${NGINX_IMAGE} >> .env",
+              "docker compose pull",
+              "docker compose up -d",
+              "docker image prune -f"
+            ]
+          }
+          JSON
+
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "${INSTANCE_ID}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "deploy datecalc ${GITHUB_SHA}" \
+            --parameters file://params.json \
+            --query "Command.CommandId" --output text)
+          echo "SSM Command ID: ${CMD_ID}"
+
+          # 完了までポーリング（最大 ~10分）。docker compose pull が長引いても待てるよう、
+          # aws ssm wait の既定タイムアウト（約100秒）に依存しない。
+          # 送信直後は invocation が未作成のことがあるため、取得失敗時は Pending 扱いで継続。
+          STATUS="Pending"
+          for _ in $(seq 1 120); do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "${CMD_ID}" --instance-id "${INSTANCE_ID}" \
+              --query Status --output text 2>/dev/null || echo "Pending")
+            case "${STATUS}" in
+              Success|Failed|Cancelled|TimedOut) break ;;
+            esac
+            sleep 5
+          done
+
+          echo "----- リモート標準出力 -----"
+          # 表示用。取得失敗で成功デプロイを落とさないよう || true でガード
+          aws ssm get-command-invocation \
+            --command-id "${CMD_ID}" --instance-id "${INSTANCE_ID}" \
+            --query StandardOutputContent --output text || true
+
+          if [ "${STATUS}" != "Success" ]; then
+            echo "::error::デプロイに失敗しました (Status=${STATUS})"
+            echo "----- リモート標準エラー -----"
+            aws ssm get-command-invocation \
+              --command-id "${CMD_ID}" --instance-id "${INSTANCE_ID}" \
+              --query StandardErrorContent --output text
+            exit 1
           fi
-          sed -i "s|__EXECUTION_ROLE_ARN__|${EXECUTION_ROLE_ARN}|g" \
-            task-definition.json
+          echo "デプロイ成功"
+          echo "  web:   ${WEB_IMAGE}"
+          echo "  nginx: ${NGINX_IMAGE}"
 
-      # ── ④ タスク定義の web コンテナイメージを manifest digest で更新 ─────────
-      #      タグではなく push ジョブが取得した不変の digest（@sha256:...）を参照する。
-      #      タグの上書き・桁数差・再タグ付けに左右されず、ビルドした成果物そのものを
-      #      確実にデプロイできる。
-      - name: Render ECS task definition for web
-        id: task-def-web
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
-        with:
-          task-definition: task-definition.json
-          container-name: web
-          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.push.outputs.web_digest }}
-
-      # ── ⑤ タスク定義の nginx コンテナイメージを manifest digest で更新 ───────
-      - name: Render ECS task definition for nginx
-        id: task-def-nginx
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
-        with:
-          task-definition: ${{ steps.task-def-web.outputs.task-definition }}
-          container-name: nginx
-          image: ${{ env.REGISTRY }}/${{ env.NGINX_IMAGE_NAME }}@${{ needs.push.outputs.nginx_digest }}
-
-      # ── ⑥ ECS サービスにデプロイ ────────────────────────────────────────────
-      #      ローリングデプロイは ECS サービスのデプロイ構成に委ねる。
-      #      EC2 起動タイプでポート80を共有する場合は、サービス側で
-      #        minimumHealthyPercent = 0 / maximumPercent = 100
-      #      を設定し、「古いタスクを停止 → ポート解放 → 新タスク起動」の順で
-      #      ECS スケジューラに処理させること（手動 stop-task は競合するため廃止）。
-      #      失敗時はサービスのデプロイサーキットブレーカーで自動ロールバックする。
-      - name: Deploy to ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
-        with:
-          task-definition: ${{ steps.task-def-nginx.outputs.task-definition }}
-          service: ${{ vars.ECS_SERVICE }}
-          cluster: ${{ vars.ECS_CLUSTER }}
-          wait-for-service-stability: true  # デプロイ完了まで待機（timeout-minutes: 30 で上限制御）
+      # ── ③ デプロイ内容をサマリーに出力 ──────────────────────────────────────
+      - name: Summary
+        if: always()
+        env:
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          WEB_IMAGE:   ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.push.outputs.web_digest }}
+          NGINX_IMAGE: ${{ env.REGISTRY }}/${{ env.NGINX_IMAGE_NAME }}@${{ needs.push.outputs.nginx_digest }}
+        run: |
+          echo "## Deploy (EC2 / SSM・digest 固定)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Instance | \`${INSTANCE_ID}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Web image | \`${WEB_IMAGE}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Nginx image | \`${NGINX_IMAGE}\` |" >> $GITHUB_STEP_SUMMARY

@@ -1,31 +1,51 @@
 services:
 
-  # ── Nginx リバースプロキシ ─────────────────────────────────────────────────
+  # ── Nginx リバースプロキシ（TLS 終端）─────────────────────────────────────
+  #   CI/CD（方法1）からは docker compose pull で入れ替えるため、ホストでビルドせず
+  #   GHCR の push 済みイメージを参照する。NGINX_IMAGE / WEB_IMAGE は deploy が .env に
+  #   不変の digest 固定参照（…@sha256:…）として書き出す。未設定時は :latest にフォールバック。
+  #   ※ nginx.conf はこのイメージに焼き込まれるため、ドメイン名は「リポジトリの
+  #     nginx/nginx.conf」で設定し、CI でビルドさせること（ホスト上での編集は反映されない）。
   nginx:
-    build: ./nginx  # nginx.conf を焼き込んだカスタムイメージをビルド（本番と統一）
+    image: ${NGINX_IMAGE:-ghcr.io/horikawatakato/datecalc-nginx:latest}
     ports:
-      - "80:80"
+      - "80:80"     # HTTP（ACME チャレンジ + HTTPS へのリダイレクト用）
+      - "443:443"   # HTTPS
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt        # 取得した証明書の保存先（ホストに永続化）
+      - ./certbot/www:/var/www/certbot         # HTTP-01 チャレンジの webroot
     depends_on:
       web:
         condition: service_healthy
     restart: unless-stopped
+    # 証明書更新を反映するため 6 時間ごとに nginx をリロードする
+    command: >
+      /bin/sh -c "while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"
 
   # ── Flask + Gunicorn (DateCalc) ───────────────────────────────────────────
   web:
-    # IMAGE_TAG は GitHub Actions が SHA タグを .env に書き出して渡す
-    # ローカル起動時のフォールバックとして latest を使用
-    image: ghcr.io/horikawatakato/datecalc:${IMAGE_TAG:-latest}
+    image: ${WEB_IMAGE:-ghcr.io/horikawatakato/datecalc:latest}
     environment:
       - TZ=Asia/Tokyo          # コンテナのタイムゾーンを日本時間に設定
       - WEB_CONCURRENCY=2      # Gunicorn ワーカー数（コンテナ資源に合わせ調整）
     expose:
       - "8000"           # Nginx からのみアクセス可。外部には公開しない。
     healthcheck:
-      # /api/today は軽量なので healthcheck に使う
       test: ["CMD", "python", "-c",
              "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/today')"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
+    restart: unless-stopped
+
+  # ── Certbot（Let's Encrypt 証明書の取得・自動更新）───────────────────────
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    # 12 時間ごとに更新を試行（期限が近いものだけ実際に更新される）
+    entrypoint: >
+      /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done"
     restart: unless-stopped
