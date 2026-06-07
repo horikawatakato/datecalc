@@ -27,7 +27,7 @@ https://horikawatakato.github.io/datecalc/coverage-report.html
 datecalc/
 ├── .github/
 │   └── workflows/
-│       └── cicd.yml            # GitHub Actions
+│       └── cicd.yml            # GitHub Actions（CI/CD）
 ├── app/
 │   ├── DateCalc.html           # Webフロントエンド
 │   ├── DateCalc.py             # 計算ロジック
@@ -42,6 +42,9 @@ datecalc/
 ├── nginx/
 │   ├── Dockerfile              # Nginxコンテナイメージ用
 │   └── nginx.conf              # リバースプロキシ設定
+├── script/
+│   └── init-letsencrypt.sh     # 初回証明書取得スクリプト
+│
 ├── .gitignore                  # Git管理除外設定
 ├── LICENSE                     # MITライセンス
 ├── README.md                   # プロジェクト説明
@@ -56,9 +59,9 @@ datecalc/
 
 | コンテナ | 役割 | ポート |
 |---|---|---|
-| **nginx** | ・リバースプロキシかつTLS終端<br>・HTTPSを復号してwebコンテナへ転送し、HTTPはHTTPSへリダイレクト<br>・証明書反映のため6時間ごとに自動リロード（80ポート） | 443 / 80 |
+| **nginx** | ・リバースプロキシかつTLS終端<br>・HTTPSを復号してwebコンテナへ転送し、HTTPはHTTPSへリダイレクト<br>・6時間ごとに自動リロードして更新後の証明書を反映（80ポート） | 443 / 80 |
 | **web** | ・アプリ本体（Gunicorn + Flask）<br>・日数計算を処理して応答<br>・外部には非公開でnginxコンテナからのみアクセス | 8000 |
-| **certbot** | ・Let's Encrypt証明書の自動更新<br>・12時間ごとに確認し、共有ボリュームでnginxコンテナに受け渡す |  |
+| **certbot** | ・12時間ごとにLet's Encryptから証明書を取得して更新 |  |
 
 <img src="container-architecture.svg" alt="コンテナ構成図" width="100%">
 
