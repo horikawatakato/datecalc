@@ -32,7 +32,7 @@ datecalc/
 │   ├── DateCalc.html           # Webフロントエンド
 │   ├── DateCalc.py             # 計算ロジック
 │   ├── DateCalc_server.py      # Flask Webサーバー（API）
-│   ├── Dockerfile              # Webコンテナイメージ用
+│   ├── Dockerfile              # appコンテナイメージ用
 │   ├── gunicorn.conf.py        # Gunicorn設定
 │   ├── requirements.txt        # 依存パッケージ（Flask・Gunicorn）
 │   ├── test_DateCalc.py        # ユニットテスト（pytest）
@@ -40,7 +40,7 @@ datecalc/
 ├── docs/
 │   └── coverage-report.html    # テストカバレッジレポート
 ├── nginx/
-│   ├── Dockerfile              # Nginxコンテナイメージ用
+│   ├── Dockerfile              # proxyコンテナイメージ用
 │   └── nginx.conf              # リバースプロキシ設定
 ├── script/
 │   └── init-letsencrypt.sh     # 初回証明書取得スクリプト
@@ -61,9 +61,9 @@ datecalc/
 
 | コンテナ | 役割 |
 |---|---|
-| **nginx** | ・リバースプロキシかつTLS終端<br>・443ポート：HTTPSを復号してwebコンテナへ転送<br>・80ポート：ACMEチャレンジの受付とHTTPSへのリダイレクト<br>・6時間ごとに自動リロードして更新後の証明書を反映 |
-| **web** | ・アプリ本体（Gunicorn + Flask + 計算ロジックDateCalc.py）<br>・8000ポート：外部には非公開でnginxコンテナからのみアクセス可能 |
-| **certbot** | ・12時間ごとに証明書の更新を試行<br>・有効期限が残り30日以下の証明書のみ実際に更新（初回発行は対象外） |
+| **proxy** | ・リバースプロキシかつTLS終端<br>・443ポート：HTTPSを復号してappコンテナへ転送<br>・80ポート：ACMEチャレンジの受付とHTTPSへのリダイレクト<br>・6時間ごとに自動リロードして更新後の証明書を反映 |
+| **app** | ・アプリ本体（Gunicorn + Flask + 計算ロジックDateCalc.py）<br>・8000ポート：外部には非公開でproxyコンテナからのみアクセス可能 |
+| **cert** | ・12時間ごとに証明書の更新を試行<br>・有効期限が残り30日以下の証明書のみ実際に更新（初回発行は対象外） |
 
 <br>
 
