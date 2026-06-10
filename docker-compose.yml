@@ -6,7 +6,7 @@ services:
   #   不変の digest 固定参照（…@sha256:…）として書き出す。未設定時は :latest にフォールバック。
   #   ※ nginx.conf はこのイメージに焼き込まれるため、ドメイン名は「リポジトリの
   #     nginx/nginx.conf」で設定し、CI でビルドさせること（ホスト上での編集は反映されない）。
-  nginx:
+  proxy:
     image: ${NGINX_IMAGE:-ghcr.io/horikawatakato/datecalc-nginx:latest}
     ports:
       - "80:80"     # HTTP（ACME チャレンジ + HTTPS へのリダイレクト用）
@@ -15,7 +15,7 @@ services:
       - ./certbot/conf:/etc/letsencrypt        # 取得した証明書の保存先（ホストに永続化）
       - ./certbot/www:/var/www/certbot         # HTTP-01 チャレンジの webroot
     depends_on:
-      web:
+      app:
         condition: service_healthy
     restart: unless-stopped
     # 証明書更新を反映するため 6 時間ごとに nginx をリロードする
@@ -23,13 +23,13 @@ services:
       /bin/sh -c "while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"
 
   # ── Flask + Gunicorn (DateCalc) ───────────────────────────────────────────
-  web:
+  app:
     image: ${WEB_IMAGE:-ghcr.io/horikawatakato/datecalc:latest}
     environment:
       - TZ=Asia/Tokyo          # コンテナのタイムゾーンを日本時間に設定
       - WEB_CONCURRENCY=2      # Gunicorn ワーカー数（コンテナ資源に合わせ調整）
     expose:
-      - "8000"           # Nginx からのみアクセス可。外部には公開しない。
+      - "8000"           # proxy からのみアクセス可。外部には公開しない。
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/today')"]
@@ -40,7 +40,7 @@ services:
     restart: unless-stopped
 
   # ── Certbot（Let's Encrypt 証明書の取得・自動更新）───────────────────────
-  certbot:
+  cert:
     image: certbot/certbot
     volumes:
       - ./certbot/conf:/etc/letsencrypt

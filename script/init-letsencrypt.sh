@@ -3,8 +3,8 @@
 # init-letsencrypt.sh
 #   Let's Encrypt の初回証明書取得から HTTPS 起動・動作確認までを 1 本で行う、
 #   自己完結型のブートストラップスクリプト。
-#   ※ 証明書取得ロジック（ダミー証明書→nginx起動→ダミー削除→本証明書取得→
-#     nginxリロード）は obtain_cert() として本スクリプトに内蔵済み。別スクリプトは不要です。
+#   ※ 証明書取得ロジック（ダミー証明書→proxy起動→ダミー削除→本証明書取得→
+#     proxyリロード）は obtain_cert() として本スクリプトに内蔵済み。別スクリプトは不要です。
 #
 #   実行する処理:
 #     - DOMAIN / EMAIL を引数で受け取る
@@ -53,9 +53,9 @@ USAGE
   exit 1
 }
 
-# ── 証明書取得（ダミー証明書→nginx起動→ダミー削除→本証明書取得→リロード）────
+# ── 証明書取得（ダミー証明書→proxy起動→ダミー削除→本証明書取得→リロード）────
 #   引数: $1 = staging フラグ（1=ステージング, 0=本番）
-#   ※ ダミーを「nginx起動より前」に作るため、通常実行中に nginx が証明書なしで
+#   ※ ダミーを「proxy起動より前」に作るため、通常実行中に proxy が証明書なしで
 #     起動する瞬間はなく、クラッシュしない。
 obtain_cert() {
   local staging="$1"
@@ -64,7 +64,7 @@ obtain_cert() {
   if [ "$staging" = "1" ]; then staging_arg="--staging"; label="ステージング"; fi
   local live_dir="$DATA_PATH/conf/live/$DOMAIN"
 
-  # ① ダミー証明書を作成（nginx を一旦起動させるため・ホストの openssl で生成）
+  # ① ダミー証明書を作成（proxy を一旦起動させるため・ホストの openssl で生成）
   info "[$label] ダミー証明書を作成（$DOMAIN）..."
   mkdir -p "$live_dir"
   openssl req -x509 -nodes -newkey "rsa:$RSA_KEY_SIZE" -days 1 \
@@ -72,9 +72,9 @@ obtain_cert() {
     -out    "$live_dir/fullchain.pem" \
     -subj "/CN=localhost" >/dev/null 2>&1
 
-  # ② nginx 起動（ダミーで起動し、80番で ACME チャレンジを受けられる状態に）
-  info "[$label] nginx を起動 ..."
-  docker compose up --force-recreate -d nginx
+  # ② proxy 起動（ダミーで起動し、80番で ACME チャレンジを受けられる状態に）
+  info "[$label] proxy を起動 ..."
+  docker compose up --force-recreate -d proxy
 
   # ③ ダミー証明書を削除（ホスト側で直接）
   info "[$label] ダミー証明書を削除 ..."
@@ -82,10 +82,10 @@ obtain_cert() {
          "$DATA_PATH/conf/archive/$DOMAIN" \
          "$DATA_PATH/conf/renewal/$DOMAIN.conf"
 
-  # ④ 本物の証明書を取得（compose の certbot は entrypoint を更新ループに上書き
+  # ④ 本物の証明書を取得（compose の cert は entrypoint を更新ループに上書き
   #    しているため、一回限りの certonly は --entrypoint certbot で既定に戻す）
   info "[$label] Let's Encrypt から証明書を取得 ..."
-  docker compose run --rm --entrypoint certbot certbot certonly \
+  docker compose run --rm --entrypoint certbot cert certonly \
     --webroot -w /var/www/certbot \
     $staging_arg \
     --email "$EMAIL" \
@@ -95,9 +95,9 @@ obtain_cert() {
     --no-eff-email \
     --force-renewal
 
-  # ⑤ nginx をリロードして証明書を反映
-  info "[$label] nginx をリロード ..."
-  docker compose exec nginx nginx -s reload
+  # ⑤ proxy をリロードして証明書を反映
+  info "[$label] proxy をリロード ..."
+  docker compose exec proxy nginx -s reload
 }
 
 # ── 引数解析 ────────────────────────────────────────────────────────────────
@@ -197,9 +197,9 @@ docker compose up -d
 sleep 5
 docker compose ps
 
-# nginx が Restarting（証明書を読めずクラッシュループ等）でないこと
-if docker compose ps nginx 2>/dev/null | grep -qi 'restart'; then
-  die "nginx が Restarting です。'docker compose logs nginx' を確認してください。"
+# proxy が Restarting（証明書を読めずクラッシュループ等）でないこと
+if docker compose ps proxy 2>/dev/null | grep -qi 'restart'; then
+  die "proxy が Restarting です。'docker compose logs proxy' を確認してください。"
 fi
 
 # ローカルから実ホスト名の vhost をテスト（--resolve で 127.0.0.1 へ向ける。
@@ -211,7 +211,7 @@ CODE_HTTP="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
               --resolve "$DOMAIN:80:127.0.0.1" "http://$DOMAIN/" || true)"
 echo "  HTTPS(443) -> $CODE_HTTPS （期待: 200）"
 echo "  HTTP(80)   -> $CODE_HTTP （期待: 301）"
-[ "$CODE_HTTPS" = "200" ] || echo "  ?? HTTPS が 200 になりません。'docker compose logs nginx web' を確認してください"
+[ "$CODE_HTTPS" = "200" ] || echo "  ?? HTTPS が 200 になりません。'docker compose logs proxy app' を確認してください"
 [ "$CODE_HTTP" = "301" ]  || echo "  ?? HTTP の 301 リダイレクトが確認できません。nginx.conf を確認してください"
 
 echo

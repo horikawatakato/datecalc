@@ -50,7 +50,7 @@ jobs:
         run: pytest --tb=short -v --cov=DateCalc --cov-report=term-missing --cov-fail-under=100
 
   # ── ビルドジョブ ────────────────────────────────────────────────────────────
-  #    Web・Nginx 両イメージをビルドし、tar として artifact に保存（PR 時もビルド確認可）
+  #    app・proxy 両イメージをビルドし、tar として artifact に保存（PR 時もビルド確認可）
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -64,15 +64,15 @@ jobs:
       id-token: none
 
     outputs:
-      web_tags:    ${{ steps.meta.outputs.tags }}
-      nginx_tags:  ${{ steps.meta-nginx.outputs.tags }}
+      app_tags:    ${{ steps.meta-app.outputs.tags }}
+      proxy_tags:  ${{ steps.meta-proxy.outputs.tags }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Extract metadata for web image
-        id: meta
+      - name: Extract metadata for app image
+        id: meta-app
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
@@ -82,8 +82,8 @@ jobs:
             type=ref,event=pr
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
-      - name: Extract metadata for nginx image
-        id: meta-nginx
+      - name: Extract metadata for proxy image
+        id: meta-proxy
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.NGINX_IMAGE_NAME }}
@@ -95,47 +95,47 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Build web image
+      - name: Build app image
         uses: docker/build-push-action@v7
         with:
           context: ./app
           file: ./app/Dockerfile
           push: false
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=docker,dest=/tmp/web.tar
+          tags: ${{ steps.meta-app.outputs.tags }}
+          labels: ${{ steps.meta-app.outputs.labels }}
+          outputs: type=docker,dest=/tmp/app.tar
           build-args: |
-            BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+            BUILD_DATE=${{ fromJSON(steps.meta-app.outputs.json).labels['org.opencontainers.image.created'] }}
             GIT_REVISION=${{ github.sha }}
 
-      - name: Build nginx image
+      - name: Build proxy image
         uses: docker/build-push-action@v7
         with:
           context: ./nginx
           file: ./nginx/Dockerfile
           push: false
-          tags: ${{ steps.meta-nginx.outputs.tags }}
-          labels: ${{ steps.meta-nginx.outputs.labels }}
-          outputs: type=docker,dest=/tmp/nginx.tar
+          tags: ${{ steps.meta-proxy.outputs.tags }}
+          labels: ${{ steps.meta-proxy.outputs.labels }}
+          outputs: type=docker,dest=/tmp/proxy.tar
 
-      - name: Upload web image artifact
+      - name: Upload app image artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
-          name: web-image
-          path: /tmp/web.tar
+          name: app-image
+          path: /tmp/app.tar
           retention-days: 1
 
-      - name: Upload nginx image artifact
+      - name: Upload proxy image artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
-          name: nginx-image
-          path: /tmp/nginx.tar
+          name: proxy-image
+          path: /tmp/proxy.tar
           retention-days: 1
 
   # ── プッシュジョブ ──────────────────────────────────────────────────────────
-  #    build の artifact を取得し、Web → Nginx の順で GHCR へ Push（PR 時はスキップ）
+  #    build の artifact を取得し、app → proxy の順で GHCR へ Push（PR 時はスキップ）
   push:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -151,8 +151,8 @@ jobs:
 
     outputs:
       # deploy ジョブへ、実際に push した不変の manifest digest を引き渡す
-      web_digest:   ${{ steps.push-web.outputs.digest }}
-      nginx_digest: ${{ steps.push-nginx.outputs.digest }}
+      app_digest:   ${{ steps.push-app.outputs.digest }}
+      proxy_digest: ${{ steps.push-proxy.outputs.digest }}
 
     steps:
       - name: Login to GHCR
@@ -162,50 +162,50 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download web image artifact
+      - name: Download app image artifact
         uses: actions/download-artifact@v7
         with:
-          name: web-image
+          name: app-image
           path: /tmp
 
-      - name: Push web image
-        id: push-web
+      - name: Push app image
+        id: push-app
         env:
-          WEB_TAGS: ${{ needs.build.outputs.web_tags }}
+          APP_TAGS: ${{ needs.build.outputs.app_tags }}
         run: |
           set -euo pipefail
-          docker load --input /tmp/web.tar
-          echo "$WEB_TAGS" | while read -r tag; do
+          docker load --input /tmp/app.tar
+          echo "$APP_TAGS" | while read -r tag; do
             [ -n "$tag" ] && docker push "$tag"
           done
           # push 済みタグから不変の manifest digest（sha256:...）を取得して出力
-          first_tag=${WEB_TAGS%%$'\n'*}
+          first_tag=${APP_TAGS%%$'\n'*}
           digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$first_tag" | cut -d'@' -f2)
           if [ -z "$digest" ]; then
-            echo "::error::web イメージの digest を取得できませんでした"; exit 1
+            echo "::error::app イメージの digest を取得できませんでした"; exit 1
           fi
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
-      - name: Download nginx image artifact
+      - name: Download proxy image artifact
         uses: actions/download-artifact@v7
         with:
-          name: nginx-image
+          name: proxy-image
           path: /tmp
 
-      - name: Push nginx image
-        id: push-nginx
+      - name: Push proxy image
+        id: push-proxy
         env:
-          NGINX_TAGS: ${{ needs.build.outputs.nginx_tags }}
+          PROXY_TAGS: ${{ needs.build.outputs.proxy_tags }}
         run: |
           set -euo pipefail
-          docker load --input /tmp/nginx.tar
-          echo "$NGINX_TAGS" | while read -r tag; do
+          docker load --input /tmp/proxy.tar
+          echo "$PROXY_TAGS" | while read -r tag; do
             [ -n "$tag" ] && docker push "$tag"
           done
-          first_tag=${NGINX_TAGS%%$'\n'*}
+          first_tag=${PROXY_TAGS%%$'\n'*}
           digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$first_tag" | cut -d'@' -f2)
           if [ -z "$digest" ]; then
-            echo "::error::nginx イメージの digest を取得できませんでした"; exit 1
+            echo "::error::proxy イメージの digest を取得できませんでした"; exit 1
           fi
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
@@ -253,8 +253,8 @@ jobs:
         env:
           INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}   # 例: i-0123456789abcdef0
           APP_DIR:     ${{ vars.APP_DIR }}           # 例: /opt/datecalc
-          WEB_IMAGE:   ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.push.outputs.web_digest }}
-          NGINX_IMAGE: ${{ env.REGISTRY }}/${{ env.NGINX_IMAGE_NAME }}@${{ needs.push.outputs.nginx_digest }}
+          WEB_IMAGE:   ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.push.outputs.app_digest }}
+          NGINX_IMAGE: ${{ env.REGISTRY }}/${{ env.NGINX_IMAGE_NAME }}@${{ needs.push.outputs.proxy_digest }}
         run: |
           set -euo pipefail
 
@@ -319,8 +319,8 @@ jobs:
         if: always()
         env:
           INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
-          WEB_IMAGE:   ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.push.outputs.web_digest }}
-          NGINX_IMAGE: ${{ env.REGISTRY }}/${{ env.NGINX_IMAGE_NAME }}@${{ needs.push.outputs.nginx_digest }}
+          WEB_IMAGE:   ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.push.outputs.app_digest }}
+          NGINX_IMAGE: ${{ env.REGISTRY }}/${{ env.NGINX_IMAGE_NAME }}@${{ needs.push.outputs.proxy_digest }}
         run: |
           echo "## Deploy (EC2 / SSM・digest 固定)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
