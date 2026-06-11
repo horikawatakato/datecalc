@@ -215,8 +215,9 @@ jobs:
   #    前提（初回のみ手動で用意しておくこと）:
   #      - EC2 に SSM エージェントが動作し、インスタンスプロファイルに
   #        AmazonSSMManagedInstanceCore がアタッチされていること
-  #      - ホストの ${APP_DIR}（例 /opt/datecalc）に docker-compose.yml と init-letsencrypt.sh を配置済み
-  #        （nginx/ や app/ のソースは不要。イメージは GHCR から pull するため）
+  #      - ホストの ${APP_DIR}（例 /opt/datecalc）に init-letsencrypt.sh を配置済み
+  #        （docker-compose.yml は本ワークフローが毎回リポジトリ版を配布するため手動配置不要。
+  #         nginx/ や app/ のソースは不要。イメージは GHCR から pull するため）
   #      - ホストで GHCR に認証済み（private イメージの場合）。例:
   #          echo <PAT> | docker login ghcr.io -u <user> --password-stdin
   #        もしくは GHCR パッケージを public にしておく
@@ -239,16 +240,21 @@ jobs:
       id-token: write  # OIDC 認証に必要
 
     steps:
-      # ── ① AWS 認証（OIDC）────────────────────────────────────────────────
+      # ── AWS 認証（OIDC）────────────────────────────────────────────────
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      # ── ② SSM Run Command で EC2 上の compose を digest 固定で入れ替え ───────
+      # ── リポジトリを取得（docker-compose.yml をホストへ配布するため）─────
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      # ── SSM Run Command で EC2 上の compose を digest 固定で入れ替え ───────
       #      push が出力した不変の manifest digest（@sha256:...）で web/nginx を固定。
       #      タグの上書き・再付与に左右されず、ビルドした成果物そのものを確実にデプロイする。
+      #      あわせてリポジトリの docker-compose.yml を base64 で送り、ホスト側へ書き出す。
       - name: Deploy to EC2 via SSM
         env:
           INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}   # 例: i-0123456789abcdef0
@@ -258,13 +264,18 @@ jobs:
         run: |
           set -euo pipefail
 
+          # リポジトリの docker-compose.yml を改行なし base64 にしてホストへ渡す。
+          # （base64 出力は [A-Za-z0-9+/=] のみで、JSON / シェルの引用を壊さない）
+          COMPOSE_B64=$(base64 -w0 docker-compose.yml)
+
           # ホスト上で実行するコマンド列を JSON で組み立てる。
-          # web/nginx をそれぞれ digest 固定の参照として .env に書き出す。
+          # compose をデコードして配置 → web/nginx を digest 固定の参照として .env に書き出す。
           cat > params.json <<JSON
           {
             "commands": [
               "set -euo pipefail",
               "cd ${APP_DIR}",
+              "echo ${COMPOSE_B64} | base64 -d > docker-compose.yml",
               "echo WEB_IMAGE=${WEB_IMAGE} > .env",
               "echo NGINX_IMAGE=${NGINX_IMAGE} >> .env",
               "docker compose pull",
@@ -314,7 +325,7 @@ jobs:
           echo "  web:   ${WEB_IMAGE}"
           echo "  nginx: ${NGINX_IMAGE}"
 
-      # ── ③ デプロイ内容をサマリーに出力 ──────────────────────────────────────
+      # ── デプロイ内容をサマリーに出力 ──────────────────────────────────────
       - name: Summary
         if: always()
         env:
