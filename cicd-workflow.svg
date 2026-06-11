@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="556" height="1128" viewBox="0 0 556 1128" version="1.1">
-<rect x="0" y="0" width="556" height="1128" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="556" height="1150" viewBox="0 0 556 1150" version="1.1">
+<rect x="0" y="0" width="556" height="1150" fill="#ffffff"/>
 <rect x="20" y="20" width="516" height="70" rx="4" fill="#1f3a5f" stroke="#1f3a5f" stroke-width="2"/>
 <text x="278.0" y="52" font-size="22" fill="#ffffff" font-weight="bold" text-anchor="middle" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">トリガー</text>
 <text x="278.0" y="76" font-size="15" fill="#dde6f2" font-weight="normal" text-anchor="middle" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">on: push(main) / pull_request(main)</text>
@@ -22,8 +22,8 @@
 <text x="56" y="484" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">5. リポジトリをチェックアウト</text>
 <text x="56" y="506" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">6. app / proxyのタグ・ラベルを生成</text>
 <text x="56" y="528" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">7. Docker Buildxをセットアップ</text>
-<text x="56" y="550" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">8. app / proxyをbuild → tar出力（pushせず）</text>
-<text x="56" y="572" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">9. tarをartifactにアップロード（PR時スキップ）</text>
+<text x="56" y="550" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">8. app / proxyをbuild → tar出力</text>
+<text x="56" y="572" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">9. tarをartifactにアップロード（pull_request時スキップ）</text>
 <line x1="278" y1="594" x2="278" y2="641" stroke="#555555" stroke-width="2.5"/>
 <polygon points="271,641 285,641 278,654" fill="#555555"/>
 <rect x="38" y="654" width="480" height="134" rx="8" fill="#eef3fa" stroke="#4a6fa5" stroke-width="1.6"/>
@@ -34,14 +34,15 @@
 <text x="56" y="766" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">12. 全タグをGHCRへpush → docker inspectでdigest取得</text>
 <line x1="278" y1="804" x2="278" y2="851" stroke="#555555" stroke-width="2.5"/>
 <polygon points="271,851 285,851 278,864" fill="#555555"/>
-<rect x="20" y="864" width="516" height="244" rx="10" fill="#fbe9cf" stroke="#d99633" stroke-width="2"/>
+<rect x="20" y="864" width="516" height="266" rx="10" fill="#fbe9cf" stroke="#d99633" stroke-width="2"/>
 <text x="38" y="900" font-size="16" fill="#8a5a12" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif"><tspan font-weight="bold">concurrency</tspan><tspan font-weight="normal"> グループ </tspan><tspan font-weight="bold">deploy-*</tspan><tspan font-weight="normal">（</tspan><tspan font-weight="bold">cancel-in-progress: false</tspan><tspan font-weight="normal">）</tspan></text>
-<rect x="38" y="914" width="480" height="178" rx="8" fill="#fdf4e6" stroke="#d99633" stroke-width="1.6"/>
+<rect x="38" y="914" width="480" height="200" rx="8" fill="#fdf4e6" stroke="#d99633" stroke-width="1.6"/>
 <text x="56" y="944" font-size="17" fill="#1a1a1a" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif"><tspan font-weight="bold">deploy</tspan><tspan font-weight="normal">（needs: push / pull_request時スキップ）</tspan></text>
 <line x1="56" y1="958" x2="500" y2="958" stroke="#d99633" stroke-width="1"/>
 <text x="56" y="982" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">13. AWS認証（OIDCでAssumeRole）</text>
-<text x="56" y="1004" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">14. push出力のapp / proxy digestを参照</text>
-<text x="56" y="1026" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">15. SSM send-commandをEC2へ送信</text>
-<text x="56" y="1048" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">16. .envにdigest固定参照を記入 → compose pull → up -d</text>
-<text x="56" y="1070" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">17. コマンド完了をポーリングし成否を判定</text>
+<text x="56" y="1004" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">14. リポジトリをチェックアウト</text>
+<text x="56" y="1026" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">15. push出力のapp / proxy digestを参照</text>
+<text x="56" y="1048" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">16. SSM send-commandをEC2へ送信</text>
+<text x="56" y="1070" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">17. .envにdigest固定参照を記入 → compose pull → up -d</text>
+<text x="56" y="1092" font-size="14" fill="#1a1a1a" font-weight="normal" text-anchor="start" font-family="Hiragino Kaku Gothic ProN, Hiragino Sans, Yu Gothic, Meiryo, Noto Sans CJK JP, Noto Sans JP, sans-serif">18. コマンド完了をポーリングし成否を判定</text>
 </svg>
