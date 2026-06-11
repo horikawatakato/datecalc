@@ -8,6 +8,8 @@ services:
   #     nginx/nginx.conf」で設定し、CI でビルドさせること（ホスト上での編集は反映されない）。
   proxy:
     image: ${NGINX_IMAGE:-ghcr.io/horikawatakato/datecalc-nginx:latest}
+    environment:
+      - TZ=Asia/Tokyo          # コンテナのタイムゾーンを日本時間に設定
     ports:
       - "80:80"     # HTTP（ACME チャレンジ + HTTPS へのリダイレクト用）
       - "443:443"   # HTTPS
@@ -42,6 +44,8 @@ services:
   # ── Certbot（Let's Encrypt 証明書の取得・自動更新）───────────────────────
   cert:
     image: certbot/certbot
+    environment:
+      - TZ=Asia/Tokyo          # コンテナのタイムゾーンを日本時間に設定
     volumes:
       - ./certbot/conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
