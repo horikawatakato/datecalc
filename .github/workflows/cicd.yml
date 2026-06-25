@@ -35,7 +35,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: '3.14'
+          python-version: '3.12'   # app/Dockerfile の python:3.12-slim に合わせる
           cache: 'pip'
 
       - name: Install dependencies
@@ -43,11 +43,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-cov
+          pip install -r requirements-dev.txt
 
       - name: Run tests
         working-directory: ./app
-        run: pytest --tb=short -v --cov=DateCalc --cov-report=term-missing --cov-fail-under=100
+        run: pytest --tb=short -v --cov=DateCalc --cov=DateCalc_server --cov-report=term-missing --cov-fail-under=100
 
   # ── ビルドジョブ ────────────────────────────────────────────────────────────
   #    app・proxy 両イメージをビルドし、tar として artifact に保存（PR 時もビルド確認可）
@@ -104,6 +104,8 @@ jobs:
           tags: ${{ steps.meta-app.outputs.tags }}
           labels: ${{ steps.meta-app.outputs.labels }}
           outputs: type=docker,dest=/tmp/app.tar
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,mode=max,scope=app
           build-args: |
             BUILD_DATE=${{ fromJSON(steps.meta-app.outputs.json).labels['org.opencontainers.image.created'] }}
             GIT_REVISION=${{ github.sha }}
@@ -117,6 +119,8 @@ jobs:
           tags: ${{ steps.meta-proxy.outputs.tags }}
           labels: ${{ steps.meta-proxy.outputs.labels }}
           outputs: type=docker,dest=/tmp/proxy.tar
+          cache-from: type=gha,scope=proxy
+          cache-to: type=gha,mode=max,scope=proxy
 
       - name: Upload app image artifact
         if: github.event_name != 'pull_request'
@@ -259,6 +263,7 @@ jobs:
         env:
           INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}   # 例: i-0123456789abcdef0
           APP_DIR:     ${{ vars.APP_DIR }}           # 例: /opt/datecalc
+          DOMAIN:      ${{ vars.DOMAIN || 'datecalc.duckdns.org' }}  # スモークテスト先（未設定時は既定値）
           WEB_IMAGE:   ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.push.outputs.app_digest }}
           NGINX_IMAGE: ${{ env.REGISTRY }}/${{ env.NGINX_IMAGE_NAME }}@${{ needs.push.outputs.proxy_digest }}
         run: |
@@ -268,19 +273,85 @@ jobs:
           # （base64 出力は [A-Za-z0-9+/=] のみで、JSON / シェルの引用を壊さない）
           COMPOSE_B64=$(base64 -w0 docker-compose.yml)
 
-          # ホスト上で実行するコマンド列を JSON で組み立てる。
-          # compose をデコードして配置 → web/nginx を digest 固定の参照として .env に書き出す。
+          # ホストで実行するスクリプトを1本にまとめて base64 で送り、"decode | bash" で実行する。
+          # 分岐・ループ（スモークテスト/ロールバック）を含むため、コマンド配列ではなくスクリプト化する。
+          #   先頭: runner 側の値を %q 安全に定義 → 以降のロジックは quoted heredoc(<<'EOF') で温存。
+          {
+            printf 'APP_DIR=%q\n'     "$APP_DIR"
+            printf 'DOMAIN=%q\n'      "$DOMAIN"
+            printf 'WEB_IMAGE=%q\n'   "$WEB_IMAGE"
+            printf 'NGINX_IMAGE=%q\n' "$NGINX_IMAGE"
+            printf 'COMPOSE_B64=%q\n' "$COMPOSE_B64"
+            cat <<'EOF'
+          set -euo pipefail
+          cd "$APP_DIR"
+
+          # 現行の構成（.env と compose）を退避（ロールバック用。初回は無くてもよい）
+          cp -f .env .env.bak 2>/dev/null || true
+          cp -f docker-compose.yml docker-compose.yml.bak 2>/dev/null || true
+
+          # compose をデコードして配置 → web/nginx を digest 固定の参照として .env に書き出す
+          echo "$COMPOSE_B64" | base64 -d > docker-compose.yml
+          printf 'WEB_IMAGE=%s\nNGINX_IMAGE=%s\n' "$WEB_IMAGE" "$NGINX_IMAGE" > .env
+
+          # pull → up → スモークテストを順に試す。失敗は if 条件で捕捉し、set -e による
+          # 即時中断を避けてロールバックへ回す。up -d は depends_on の service_healthy を
+          # 待つため、不正イメージ（app が unhealthy 等）では非0で返り得る点に注意。
+          deploy_ok=0
+          if docker compose pull && docker compose up -d; then
+            # エンドツーエンドのスモークテスト（proxy→app→TLS まで通るか）を最大60秒待つ。
+            # --resolve でループバック経由でも本物の証明書名で検証する。
+            for _ in $(seq 1 30); do
+              if curl -fsS --max-time 5 \
+                   --resolve "$DOMAIN:443:127.0.0.1" \
+                   "https://$DOMAIN/api/today" >/dev/null; then
+                deploy_ok=1; break
+              fi
+              sleep 2
+            done
+          fi
+
+          # 失敗時は直前の構成（.env / compose）へ戻して再起動し、非0で終了する。
+          if [ "$deploy_ok" != 1 ]; then
+            echo "デプロイ検証に失敗。直前の構成へロールバックします。" >&2
+            if [ -f docker-compose.yml.bak ]; then mv -f docker-compose.yml.bak docker-compose.yml; fi
+            rolled_back=0
+            if [ -f .env.bak ]; then
+              mv -f .env.bak .env
+              docker compose up -d || true
+              rolled_back=1
+            fi
+            # ロールバックできた時のみ、未参照になった新イメージ（不正）を明示削除する。
+            # （初回など退避が無い場合は新イメージが稼働中なので消さない）。
+            # digest 参照は dangling 扱いされず prune では回収されないため rm で確実に消す。
+            if [ "$rolled_back" = 1 ]; then
+              docker image rm -f "$WEB_IMAGE" "$NGINX_IMAGE" >/dev/null 2>&1 || true
+            fi
+            exit 1
+          fi
+
+          # 成功時: 旧イメージ（今回と異なる digest のみ）を削除して滞留を防ぐ。
+          # digest 参照は prune では回収されないため明示削除する。同一 digest の
+          # 再デプロイでは稼働中イメージを消さないよう、必ず新旧の差分を確認する。
+          if [ -f .env.bak ]; then
+            old_web=$(grep -E '^WEB_IMAGE=' .env.bak | head -n1 | cut -d= -f2-)
+            old_nginx=$(grep -E '^NGINX_IMAGE=' .env.bak | head -n1 | cut -d= -f2-)
+            [ -n "$old_web" ]   && [ "$old_web" != "$WEB_IMAGE" ]     && docker image rm -f "$old_web"   >/dev/null 2>&1 || true
+            [ -n "$old_nginx" ] && [ "$old_nginx" != "$NGINX_IMAGE" ] && docker image rm -f "$old_nginx" >/dev/null 2>&1 || true
+          fi
+
+          rm -f .env.bak docker-compose.yml.bak
+          docker image prune -f
+          EOF
+          } > remote.sh
+
+          REMOTE_B64=$(base64 -w0 remote.sh)
+
+          # ホストではこの1コマンドだけ実行（デコードして bash に渡す）
           cat > params.json <<JSON
           {
             "commands": [
-              "set -euo pipefail",
-              "cd ${APP_DIR}",
-              "echo ${COMPOSE_B64} | base64 -d > docker-compose.yml",
-              "echo WEB_IMAGE=${WEB_IMAGE} > .env",
-              "echo NGINX_IMAGE=${NGINX_IMAGE} >> .env",
-              "docker compose pull",
-              "docker compose up -d",
-              "docker image prune -f"
+              "echo ${REMOTE_B64} | base64 -d | bash"
             ]
           }
           JSON
