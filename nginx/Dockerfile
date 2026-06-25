@@ -1,4 +1,4 @@
-FROM nginx:1.27-alpine
+FROM nginx:1.31-alpine
 
 # GHCR連携用ビルド引数（docker build --build-arg で上書き可能。app/Dockerfile と揃える）
 ARG IMAGE_VERSION=latest
