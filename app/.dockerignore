@@ -1,0 +1,15 @@
+# 本番イメージに不要なファイルをビルドコンテキストから除外する。
+# （依存パッケージは requirements.txt のみインストール済み。以下は実行に不要）
+
+# テスト関連
+test_*.py
+requirements-dev.txt
+
+# Python キャッシュ
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# ビルド定義そのもの（イメージ内に持ち込む必要なし）
+Dockerfile
+.dockerignore

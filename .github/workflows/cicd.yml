@@ -3,8 +3,16 @@ name: CICD
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'README.md'
+      - '**/*.svg'
+      - 'docs/**'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'README.md'
+      - '**/*.svg'
+      - 'docs/**'
 
 # ── 同時実行制御（ジョブ単位で制御）──────────────────────────────────────────
 #    test / build : 共通グループ(ci-*)で cancel-in-progress: true（後発ランが来ると停止）。
@@ -40,6 +48,9 @@ jobs:
         with:
           python-version: '3.12'   # app/Dockerfile の python:3.12-slim に合わせる
           cache: 'pip'
+          cache-dependency-path: |
+            app/requirements.txt
+            app/requirements-dev.txt
 
       - name: Install dependencies
         working-directory: ./app
@@ -94,6 +105,7 @@ jobs:
           tags: |
             type=sha,prefix=sha-,format=short
             type=ref,event=branch
+            type=ref,event=pr
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Set up Docker Buildx
