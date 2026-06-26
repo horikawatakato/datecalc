@@ -10,6 +10,9 @@ updates:
       interval: weekly
     commit-message:
       prefix: ci
+    groups:
+      github-actions:
+        patterns: ["*"]
 
   # Python 依存（app/requirements*.txt）
   - package-ecosystem: pip
@@ -18,6 +21,9 @@ updates:
       interval: weekly
     commit-message:
       prefix: deps
+    groups:
+      python-minor:
+        update-types: ["minor", "patch"]
 
   # Docker ベースイメージ（app/Dockerfile・nginx/Dockerfile の FROM）
   - package-ecosystem: docker
@@ -28,3 +34,6 @@ updates:
       interval: weekly
     commit-message:
       prefix: docker
+    groups:
+      docker-minor:
+        update-types: ["minor", "patch"]
