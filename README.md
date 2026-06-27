@@ -29,14 +29,17 @@ datecalc/
 │   └── workflows/
 │       └── cicd.yml            # GitHub Actions（CI/CD）
 ├── app/
-│   ├── DateCalc.html           # Webフロントエンド
+│   ├── .dockerignore           # Dockerビルド除外設定
+│   ├── DateCalc.html           # webフロントエンド
 │   ├── DateCalc.py             # 計算ロジック
-│   ├── DateCalc_server.py      # Flask Webサーバー（API）
+│   ├── DateCalc_server.py      # flask webサーバー（API）
 │   ├── Dockerfile              # appコンテナイメージ用
-│   ├── gunicorn.conf.py        # Gunicorn設定
-│   ├── requirements.txt        # 依存パッケージ（Flask・Gunicorn）
+│   ├── gunicorn.conf.py        # gunicorn設定
+│   ├── requirements-dev.txt    # 開発用依存パッケージ（pytest）
+│   ├── requirements.txt        # 依存パッケージ（flask・gunicorn）
 │   ├── test_DateCalc.py        # ユニットテスト（pytest）
-│   └── wsgi.py                 # Gunicornエントリポイント
+│   ├── test_DateCalc_server.py # ユニットテスト（flask）
+│   └── wsgi.py                 # gunicornエントリポイント
 ├── docs/
 │   └── coverage-report.html    # テストカバレッジレポート
 ├── nginx/
@@ -78,15 +81,7 @@ Let's Encryptが証明書を発行・更新する前に行う「あなたが本�
 
 ## GitHub Actions（CI/CD）
 
-mainへのpushとpull requestをトリガーに実行
-
-- **push**：test → build → push → deployすべて実行
-- **pull request**：test → buildのみ実行（pushとdeployはスキップ）
-
-同時実行制御（concurrency）はジョブ単位で設定
- 
-- **test / build / push**：古いコミットの実行をキャンセルし、最新コミットを優先
-- **deploy**：実行中はキャンセルせず、新しい実行は前のデプロイ完了まで待機
+<br>
 
 <img src="cicd-workflow.svg" alt="CI/CDワークフロー図" width="100%">
 
