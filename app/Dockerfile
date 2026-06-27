@@ -36,17 +36,21 @@ WORKDIR /app
 # インストール済みパッケージをコピー
 COPY --from=builder /install /usr/local
 
-# アプリファイルをコピー
-#   DateCalc.py          … 計算ロジック
-#   DateCalc_server.py   … Flask アプリ本体（変更なし）
-#   DateCalc.html        … フロントエンド（/ で配信）
-#   wsgi.py              … Gunicorn エントリポイント
-#   gunicorn.conf.py     … Gunicorn 設定
+# アプリファイルをコピー（ビルドコンテキスト app/ の構成を保持）
+#   src/DateCalc.py        … 計算ロジック
+#   src/DateCalc_server.py … Flask アプリ本体
+#   src/wsgi.py            … Gunicorn エントリポイント
+#   static/DateCalc.html  … フロントエンド（/ で配信）
+#   gunicorn.conf.py      … Gunicorn 設定（/app 直下）
 COPY --chown=appuser:appuser . .
+
+# wsgi / DateCalc_server / DateCalc は src/ にあるため import 検索パスへ追加する
+ENV PYTHONPATH=/app/src
 
 USER appuser
 
 EXPOSE 8000
 
 # Gunicorn 経由で起動（DateCalc_server.py の app.run() は呼ばれない）
+# 設定は /app/gunicorn.conf.py、アプリは PYTHONPATH(/app/src) 上の wsgi:app
 CMD ["gunicorn", "--config", "gunicorn.conf.py", "wsgi:app"]

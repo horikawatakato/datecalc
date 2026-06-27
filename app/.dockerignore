@@ -2,7 +2,9 @@
 # （依存パッケージは requirements.txt のみインストール済み。以下は実行に不要）
 
 # テスト関連
+tests/
 test_*.py
+pytest.ini
 requirements-dev.txt
 
 # Python キャッシュ

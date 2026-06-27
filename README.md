@@ -27,33 +27,42 @@ https://horikawatakato.github.io/datecalc/coverage-report.html
 datecalc/
 ├── .github/
 │   └── workflows/
-│       └── cicd.yml            # GitHub Actions（CI/CD）
-├── app/
-│   ├── .dockerignore           # Dockerビルド除外設定
-│   ├── DateCalc.html           # webフロントエンド
-│   ├── DateCalc.py             # 計算ロジック
-│   ├── DateCalc_server.py      # flask webサーバー（API）
-│   ├── Dockerfile              # appコンテナイメージ用
-│   ├── gunicorn.conf.py        # gunicorn設定
-│   ├── requirements-dev.txt    # 開発用依存パッケージ（pytest）
-│   ├── requirements.txt        # 依存パッケージ（flask・gunicorn）
-│   ├── test_DateCalc.py        # ユニットテスト（pytest）
-│   ├── test_DateCalc_server.py # ユニットテスト（flask）
-│   └── wsgi.py                 # gunicornエントリポイント
-├── docs/
-│   └── coverage-report.html    # テストカバレッジレポート
-├── nginx/
-│   ├── Dockerfile              # proxyコンテナイメージ用
-│   └── nginx.conf              # リバースプロキシ設定
-├── script/
-│   └── init-letsencrypt.sh     # 初回証明書取得スクリプト
+│       └── cicd.yml                # GitHub Actions（CI/CD）
 │
-├── .gitignore                  # Git管理除外設定
-├── LICENSE                     # MITライセンス
-├── README.md                   # プロジェクト説明
-├── cicd-workflow.svg           # CI/CDワークフロー図
-├── container-architecture.svg  # コンテナ構成図
-└── docker-compose.yml          # コンテナ構成定義
+├── app/
+│   ├── src/
+│   │   ├── DateCalc.py             # 計算ロジック
+│   │   ├── DateCalc_server.py      # flask webサーバー（API）
+│   │   └── wsgi.py                 # gunicornエントリポイント
+│   ├── static/
+│   │   └── DateCalc.html           # webフロントエンド
+│   ├── tests/
+│   │   ├── test_DateCalc.py        # ユニットテスト（pytest）
+│   │   └── test_DateCalc_server.py # ユニットテスト（flask）
+│   │
+│   ├── .dockerignore               # Dockerビルド除外設定
+│   ├── Dockerfile                  # appコンテナイメージ用
+│   ├── gunicorn.conf.py            # gunicorn設定
+│   ├── pytest.ini                  # pytest設定
+│   ├── requirements-dev.txt        # 開発用依存パッケージ（pytest）
+│   └── requirements.txt            # 依存パッケージ（flask・gunicorn）
+│
+├── docs/
+│   ├── coverage-report.html        # テストカバレッジレポート
+│   ├── cicd-workflow.svg           # CI/CDワークフロー図
+│   └── container-architecture.svg  # コンテナ構成図
+│
+├── nginx/
+│   ├── Dockerfile                  # proxyコンテナイメージ用
+│   └── nginx.conf                  # リバースプロキシ設定
+│
+├── scripts/
+│   └── init-letsencrypt.sh         # 初回証明書取得スクリプト
+│
+├── .gitignore                      # Git管理除外設定
+├── LICENSE                         # MITライセンス
+├── README.md                       # プロジェクト説明
+└── docker-compose.yml              # コンテナ構成定義
 ```
 
 ---
@@ -75,7 +84,7 @@ Let's Encryptが証明書を発行・更新する前に行う「あなたが本�
 
 <br>
 
-<img src="container-architecture.svg" alt="コンテナ構成図" width="100%">
+<img src="docs/container-architecture.svg" alt="コンテナ構成図" width="100%">
 
 ---
 
@@ -83,10 +92,8 @@ Let's Encryptが証明書を発行・更新する前に行う「あなたが本�
 
 <br>
 
-<img src="cicd-workflow.svg" alt="CI/CDワークフロー図" width="100%">
+<img src="docs/cicd-workflow.svg" alt="CI/CDワークフロー図" width="100%">
 
-<br>
-<br>
 <br>
 <br>
 <br>

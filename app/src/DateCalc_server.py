@@ -21,9 +21,12 @@ from datetime import date
 from flask import Flask, request, jsonify, send_from_directory
 
 # どの作業ディレクトリから起動しても下の `from DateCalc import ...` を解決できるよう、
-# このファイルと同じフォルダを import 検索パスの先頭に追加する
+# このファイルと同じフォルダ（src/）を import 検索パスの先頭に追加する
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
+
+# フロントエンド DateCalc.html は src/ の隣の static/ に配置（app/static/DateCalc.html）
+STATIC_DIR = os.path.join(os.path.dirname(BASE_DIR), "static")
 
 # 計算ロジックは DateCalc.py に集約。このサーバーは呼び出して結果を中継するだけ
 from DateCalc import calculate, get_weekday
@@ -36,7 +39,7 @@ app = Flask(__name__, static_folder=None)  # 自動の静的配信を無効化�
 @app.route("/")
 def index():
     """DateCalc.html をそのまま返す。"""
-    return send_from_directory(BASE_DIR, "DateCalc.html")
+    return send_from_directory(STATIC_DIR, "DateCalc.html")
 
 
 # ── API エンドポイント ────────────────────────────────────────────────────────
