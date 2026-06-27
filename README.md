@@ -48,9 +48,9 @@ datecalc/
 │   └── requirements.txt            # 依存パッケージ（flask・gunicorn）
 │
 ├── docs/
-│   ├── coverage-report.html        # テストカバレッジレポート
 │   ├── cicd-workflow.svg           # CI/CDワークフロー図
-│   └── container-architecture.svg  # コンテナ構成図
+│   ├── container-architecture.svg  # コンテナ構成図
+│   └── coverage-report.html        # テストカバレッジレポート
 │
 ├── nginx/
 │   ├── Dockerfile                  # proxyコンテナイメージ用
@@ -58,6 +58,7 @@ datecalc/
 │
 ├── scripts/
 │   └── init-letsencrypt.sh         # 初回証明書取得スクリプト
+│
 │
 ├── .gitignore                      # Git管理除外設定
 ├── LICENSE                         # MITライセンス
