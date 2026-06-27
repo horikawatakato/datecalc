@@ -59,7 +59,6 @@ datecalc/
 ├── scripts/
 │   └── init-letsencrypt.sh         # 初回証明書取得スクリプト
 │
-│
 ├── .gitignore                      # Git管理除外設定
 ├── LICENSE                         # MITライセンス
 ├── README.md                       # プロジェクト説明
