@@ -5,13 +5,11 @@ on:
     branches: [main]
     paths-ignore:
       - 'README.md'
-      - '**/*.svg'
       - 'docs/**'
   pull_request:
     branches: [main]
     paths-ignore:
       - 'README.md'
-      - '**/*.svg'
       - 'docs/**'
 
 # ── 同時実行制御（ジョブ単位で制御）──────────────────────────────────────────
