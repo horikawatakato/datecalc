@@ -22,8 +22,7 @@ LABEL org.opencontainers.image.title="DateCalc nginx proxy" \
 #   NGINX_ENVSUBST_FILTER で置換対象を ${DOMAIN} のみに限定し、$host 等の nginx 変数は温存する。
 COPY nginx.conf.template /etc/nginx/templates/nginx.conf.template
 ENV NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx \
-    NGINX_ENVSUBST_FILTER=DOMAIN \
-    DOMAIN=datecalc.duckdns.org
+    NGINX_ENVSUBST_FILTER=DOMAIN
 
 # 80(HTTP リダイレクト/ACME) と 443(HTTPS) の両方を公開
 EXPOSE 80 443

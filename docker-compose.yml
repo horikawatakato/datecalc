@@ -10,7 +10,7 @@ services:
     image: ${NGINX_IMAGE:-ghcr.io/horikawatakato/datecalc-nginx:latest}
     environment:
       - TZ=Asia/Tokyo          # コンテナのタイムゾーンを日本時間に設定
-      - DOMAIN=${DOMAIN:-datecalc.duckdns.org}  # nginx.conf に展開するドメイン（deploy が .env に書き出す）
+      - DOMAIN=${DOMAIN:?DOMAIN is required (set it in .env; deploy writes it from the GitHub repo variable)}  # nginx.conf に展開するドメイン
     ports:
       - "80:80"     # HTTP（ACME チャレンジ + HTTPS へのリダイレクト用）
       - "443:443"   # HTTPS
