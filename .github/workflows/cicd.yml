@@ -314,7 +314,7 @@ jobs:
 
           # compose をデコードして配置 → web/nginx を digest 固定の参照として .env に書き出す
           echo "$COMPOSE_B64" | base64 -d > docker-compose.yml
-          printf 'WEB_IMAGE=%s\nNGINX_IMAGE=%s\n' "$WEB_IMAGE" "$NGINX_IMAGE" > .env
+          printf 'WEB_IMAGE=%s\nNGINX_IMAGE=%s\nDOMAIN=%s\n' "$WEB_IMAGE" "$NGINX_IMAGE" "$DOMAIN" > .env
 
           # pull → up → スモークテストを順に試す。失敗は if 条件で捕捉し、set -e による
           # 即時中断を避けてロールバックへ回す。up -d は depends_on の service_healthy を

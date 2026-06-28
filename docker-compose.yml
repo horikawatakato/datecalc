@@ -4,12 +4,13 @@ services:
   #   CI/CD（方法1）からは docker compose pull で入れ替えるため、ホストでビルドせず
   #   GHCR の push 済みイメージを参照する。NGINX_IMAGE / WEB_IMAGE は deploy が .env に
   #   不変の digest 固定参照（…@sha256:…）として書き出す。未設定時は :latest にフォールバック。
-  #   ※ nginx.conf はこのイメージに焼き込まれるため、ドメイン名は「リポジトリの
-  #     nginx/nginx.conf」で設定し、CI でビルドさせること（ホスト上での編集は反映されない）。
+  #   ※ nginx 設定はこのイメージに焼き込まれる（テンプレート nginx/nginx.conf.template）。
+  #     ドメイン名だけは起動時に環境変数 DOMAIN から envsubst で展開されるため、ここで渡す。
   proxy:
     image: ${NGINX_IMAGE:-ghcr.io/horikawatakato/datecalc-nginx:latest}
     environment:
       - TZ=Asia/Tokyo          # コンテナのタイムゾーンを日本時間に設定
+      - DOMAIN=${DOMAIN:-datecalc.duckdns.org}  # nginx.conf に展開するドメイン（deploy が .env に書き出す）
     ports:
       - "80:80"     # HTTP（ACME チャレンジ + HTTPS へのリダイレクト用）
       - "443:443"   # HTTPS
@@ -20,9 +21,12 @@ services:
       app:
         condition: service_healthy
     restart: unless-stopped
-    # 証明書更新を反映するため 6 時間ごとに nginx をリロードする
+    # command を上書きすると公式 entrypoint がテンプレート展開（envsubst）をスキップするため、
+    # まず 20-envsubst-on-templates.sh を明示実行して ${DOMAIN} 入りの nginx.conf を生成し、
+    # その後で「6 時間ごとに nginx をリロード（証明書更新の反映）」しつつ nginx を前景起動する。
     command: >
-      /bin/sh -c "while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"
+      /bin/sh -c "/docker-entrypoint.d/20-envsubst-on-templates.sh;
+      while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"
 
   # ── Flask + Gunicorn (DateCalc) ───────────────────────────────────────────
   app:

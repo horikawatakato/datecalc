@@ -54,7 +54,7 @@ datecalc/
 │
 ├── nginx/
 │   ├── Dockerfile                  # proxyコンテナイメージ用
-│   └── nginx.conf                  # リバースプロキシ設定
+│   └── nginx.conf.template         # リバースプロキシ設定
 │
 ├── scripts/
 │   └── init-letsencrypt.sh         # 初回証明書取得スクリプト

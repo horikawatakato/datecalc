@@ -27,7 +27,7 @@ http {
     #   リダイレクトせず素通しさせ、それ以外は 443 へ恒久リダイレクトする。
     server {
         listen 80;
-        server_name datecalc.duckdns.org;   # CI のスモークテスト DOMAIN と一致させること
+        server_name ${DOMAIN};   # CI のスモークテスト DOMAIN と一致させること
 
         location /.well-known/acme-challenge/ {
             root /var/www/certbot;           # certbot の webroot と共有
@@ -42,11 +42,11 @@ http {
     server {
         listen 443 ssl;
         http2 on;
-        server_name datecalc.duckdns.org;   # 80番と同じドメイン。証明書パスとも一致させること
+        server_name ${DOMAIN};   # 80番と同じドメイン。証明書パスとも一致させること
 
         # certbot が取得した証明書（certbot/conf ボリューム内）
-        ssl_certificate     /etc/letsencrypt/live/datecalc.duckdns.org/fullchain.pem;
-        ssl_certificate_key /etc/letsencrypt/live/datecalc.duckdns.org/privkey.pem;
+        ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
 
         # TLS の推奨設定
         ssl_protocols       TLSv1.2 TLSv1.3;

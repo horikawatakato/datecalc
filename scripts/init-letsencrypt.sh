@@ -26,7 +26,7 @@
 #     2) 実行権限を付与する
 #          chmod +x init-letsencrypt.sh
 #     3) myapp.duckdns.org / you@example.com を自分の値に置き換えて実行する
-#        （ドメインはリポジトリの nginx.conf の server_name と同じ値にすること）
+#        （ドメインは proxy コンテナの環境変数 DOMAIN（compose / .env）と同じ値にすること）
 #          ./init-letsencrypt.sh -d myapp.duckdns.org -e you@example.com
 #     4) ステージング成功後の「本番証明書を取得しますか？ [y/N]」で y を入力すると本番取得へ進む
 # =============================================================================
@@ -47,7 +47,7 @@ info() { echo "### $*"; }
 usage() {
   cat <<USAGE
 Usage: $0 -d <domain> -e <email>
-  -d  取得するサブドメイン（例: myapp.duckdns.org / nginx.conf に設定したものと一致させる）
+  -d  取得するサブドメイン（例: myapp.duckdns.org / 環境変数 DOMAIN に設定したものと一致させる）
   -e  連絡先メール（例: you@example.com）
 USAGE
   exit 1
@@ -212,7 +212,7 @@ CODE_HTTP="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
 echo "  HTTPS(443) -> $CODE_HTTPS （期待: 200）"
 echo "  HTTP(80)   -> $CODE_HTTP （期待: 301）"
 [ "$CODE_HTTPS" = "200" ] || echo "  ?? HTTPS が 200 になりません。'docker compose logs proxy app' を確認してください"
-[ "$CODE_HTTP" = "301" ]  || echo "  ?? HTTP の 301 リダイレクトが確認できません。nginx.conf を確認してください"
+[ "$CODE_HTTP" = "301" ]  || echo "  ?? HTTP の 301 リダイレクトが確認できません。nginx 設定（生成元 nginx.conf.template / 環境変数 DOMAIN、稼働中はコンテナ内 /etc/nginx/nginx.conf）を確認してください"
 
 echo
 info "セットアップ完了です。"
