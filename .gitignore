@@ -16,7 +16,7 @@ htmlcov/
 coverage.xml
 
 # ── 環境変数 ─────────────────────────────────────────────
-# deploy が WEB_IMAGE / NGINX_IMAGE（digest 固定参照）を書き出す先。環境別ファイルも除外する
+# deploy が APP_IMAGE / PROXY_IMAGE（digest 固定参照）を書き出す先。環境別ファイルも除外する
 .env
 .env.*
 # テンプレートはコミット対象として除外解除（行末コメント不可のため独立行）

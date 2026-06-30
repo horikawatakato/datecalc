@@ -1,11 +1,7 @@
 # 日数計算機
 
-日数計算を行うWebアプリケーションです。HTTPSに対応しています。  
-AWS EC2上でコンテナ運用し、GitHub ActionsによるCI/CDを構築しています。
-
-<br>
-  
-https://datecalc.duckdns.org/
+**日数計算を行うWebアプリケーション**  
+**https://datecalc.duckdns.org/**
 
 <br>
 
@@ -13,11 +9,18 @@ https://datecalc.duckdns.org/
 
 ## 主な機能
 
-- 現在の日付と入力した日付の差分を日数で表示（365日以上は年数も併記）
-- 紀元前999年から西暦9999年まで対応
-- 紀元前の年は負数で入力（例：-100年1月1日 = 紀元前100年1月1日）
+- 現在の日付と入力日付の差分を日数で表示（365日以上は年数も併記）
+- 紀元前999年〜西暦9999年に対応（紀元前の年は負数で入力）
 - 曜日の表示
-- 計算履歴の表示（最大8件、重複は自動排除）
+
+<br>
+
+---
+
+## 主な使用技術
+
+- AWS EC2でNginxをリバースプロキシかつTLS終端に使用したコンテナ構成を構築
+- GitHub Actionsでテスト→ビルド→プッシュ→デプロイを自動化したCI/CDパイプラインを構築
 
 <br>
 
@@ -53,7 +56,7 @@ datecalc/
 │   ├── cicd-workflow.svg           # CI/CDワークフロー図
 │   └── container-architecture.svg  # コンテナ構成図
 │
-├── nginx/
+├── proxy/
 │   ├── Dockerfile                  # proxyコンテナイメージ用
 │   └── nginx.conf.template         # リバースプロキシ設定
 │
@@ -88,6 +91,8 @@ Let's Encryptが証明書を発行・更新する前に行う「あなたが本�
 <br>
 
 <img src="docs/container-architecture.svg" alt="コンテナ構成図" width="100%">
+
+<br>
 
 ---
 

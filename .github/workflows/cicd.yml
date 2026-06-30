@@ -22,8 +22,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: horikawatakato/app
-  NGINX_IMAGE_NAME: horikawatakato/proxy
+  APP_IMAGE_NAME: horikawatakato/app
+  PROXY_IMAGE_NAME: horikawatakato/proxy
 
 jobs:
   # ── テストジョブ ────────────────────────────────────────────────────────────
@@ -89,7 +89,7 @@ jobs:
         id: meta-app
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.APP_IMAGE_NAME }}
           tags: |
             type=sha,prefix=sha-,format=short
             type=ref,event=branch
@@ -100,7 +100,7 @@ jobs:
         id: meta-proxy
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.REGISTRY }}/${{ env.NGINX_IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.PROXY_IMAGE_NAME }}
           tags: |
             type=sha,prefix=sha-,format=short
             type=ref,event=branch
@@ -128,8 +128,8 @@ jobs:
       - name: Build proxy image
         uses: docker/build-push-action@v7
         with:
-          context: ./nginx
-          file: ./nginx/Dockerfile
+          context: ./proxy
+          file: ./proxy/Dockerfile
           push: false
           tags: ${{ steps.meta-proxy.outputs.tags }}
           labels: ${{ steps.meta-proxy.outputs.labels }}
@@ -244,7 +244,7 @@ jobs:
   #         インスタンスロールに logs:CreateLogGroup / CreateLogStream / PutLogEvents が必要）
   #      - ホストの ${APP_DIR}（例 /opt/datecalc）に init-letsencrypt.sh を配置済み
   #        （docker-compose.yml は本ワークフローが毎回リポジトリ版を配布するため手動配置不要。
-  #         nginx/ や app/ のソースは不要。イメージは GHCR から pull するため）
+  #         proxy/ や app/ のソースは不要。イメージは GHCR から pull するため）
   #      - ホストで GHCR に認証済み（private イメージの場合）。例:
   #          echo <PAT> | docker login ghcr.io -u <user> --password-stdin
   #        もしくは GHCR パッケージを public にしておく
@@ -307,7 +307,7 @@ jobs:
         uses: actions/checkout@v6
 
       # ── SSM Run Command で EC2 上の compose を digest 固定で入れ替え ───────
-      #      push が出力した不変の manifest digest（@sha256:...）で web/nginx を固定。
+      #      push が出力した不変の manifest digest（@sha256:...）で app/proxy を固定。
       #      タグの上書き・再付与に左右されず、ビルドした成果物そのものを確実にデプロイする。
       #      あわせてリポジトリの docker-compose.yml を base64 で送り、ホスト側へ書き出す。
       - name: Deploy to EC2 via SSM
@@ -315,8 +315,8 @@ jobs:
           APP_DIR:     ${{ vars.APP_DIR }}
           DOMAIN:      ${{ vars.DOMAIN }}
           INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
-          WEB_IMAGE:   ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.push.outputs.app_digest }}
-          NGINX_IMAGE: ${{ env.REGISTRY }}/${{ env.NGINX_IMAGE_NAME }}@${{ needs.push.outputs.proxy_digest }}
+          APP_IMAGE:   ${{ env.REGISTRY }}/${{ env.APP_IMAGE_NAME }}@${{ needs.push.outputs.app_digest }}
+          PROXY_IMAGE: ${{ env.REGISTRY }}/${{ env.PROXY_IMAGE_NAME }}@${{ needs.push.outputs.proxy_digest }}
         run: |
           set -euo pipefail
 
@@ -330,8 +330,8 @@ jobs:
           {
             printf 'APP_DIR=%q\n'     "$APP_DIR"
             printf 'DOMAIN=%q\n'      "$DOMAIN"
-            printf 'WEB_IMAGE=%q\n'   "$WEB_IMAGE"
-            printf 'NGINX_IMAGE=%q\n' "$NGINX_IMAGE"
+            printf 'APP_IMAGE=%q\n'   "$APP_IMAGE"
+            printf 'PROXY_IMAGE=%q\n' "$PROXY_IMAGE"
             printf 'COMPOSE_B64=%q\n' "$COMPOSE_B64"
             cat <<'EOF'
           set -euo pipefail
@@ -341,9 +341,9 @@ jobs:
           cp -f .env .env.bak 2>/dev/null || true
           cp -f docker-compose.yml docker-compose.yml.bak 2>/dev/null || true
 
-          # compose をデコードして配置 → web/nginx を digest 固定の参照として .env に書き出す
+          # compose をデコードして配置 → app/proxy を digest 固定の参照として .env に書き出す
           echo "$COMPOSE_B64" | base64 -d > docker-compose.yml
-          printf 'WEB_IMAGE=%s\nNGINX_IMAGE=%s\nDOMAIN=%s\n' "$WEB_IMAGE" "$NGINX_IMAGE" "$DOMAIN" > .env
+          printf 'APP_IMAGE=%s\nPROXY_IMAGE=%s\nDOMAIN=%s\n' "$APP_IMAGE" "$PROXY_IMAGE" "$DOMAIN" > .env
 
           # pull → up → スモークテストを順に試す。失敗は if 条件で捕捉し、set -e による
           # 即時中断を避けてロールバックへ回す。up -d は depends_on の service_healthy を
@@ -378,10 +378,11 @@ jobs:
               # ロールバック後の .env には旧 digest が入っている。今回の新イメージが
               # 旧と異なる時だけ削除する（同一 digest 再デプロイ時に稼働中を消さない）。
               # digest 参照は prune で回収されないため rm で確実に消す。
-              old_web=$(grep -E '^WEB_IMAGE=' .env | head -n1 | cut -d= -f2-)
-              old_nginx=$(grep -E '^NGINX_IMAGE=' .env | head -n1 | cut -d= -f2-)
-              [ "$old_web"   != "$WEB_IMAGE"   ] && docker image rm -f "$WEB_IMAGE"   >/dev/null 2>&1 || true
-              [ "$old_nginx" != "$NGINX_IMAGE" ] && docker image rm -f "$NGINX_IMAGE" >/dev/null 2>&1 || true
+              # grep が no-match で exit 1 → pipefail+set -e で中断するのを防ぐ（|| true で空に）
+              old_app=$(grep -E '^APP_IMAGE=' .env | head -n1 | cut -d= -f2- || true)
+              old_proxy=$(grep -E '^PROXY_IMAGE=' .env | head -n1 | cut -d= -f2- || true)
+              [ "$old_app"   != "$APP_IMAGE"   ] && docker image rm -f "$APP_IMAGE"   >/dev/null 2>&1 || true
+              [ "$old_proxy" != "$PROXY_IMAGE" ] && docker image rm -f "$PROXY_IMAGE" >/dev/null 2>&1 || true
             else
               # ロールバック先が無い（初回デプロイ等）。起動済みなら壊れた新構成を残さず停止する（未起動でも down は無害）。
               echo "ロールバック先が無いため、新構成を停止します（手動復旧が必要）。" >&2
@@ -394,10 +395,11 @@ jobs:
           # digest 参照は prune では回収されないため明示削除する。同一 digest の
           # 再デプロイでは稼働中イメージを消さないよう、必ず新旧の差分を確認する。
           if [ -f .env.bak ]; then
-            old_web=$(grep -E '^WEB_IMAGE=' .env.bak | head -n1 | cut -d= -f2-)
-            old_nginx=$(grep -E '^NGINX_IMAGE=' .env.bak | head -n1 | cut -d= -f2-)
-            [ -n "$old_web" ]   && [ "$old_web" != "$WEB_IMAGE" ]     && docker image rm -f "$old_web"   >/dev/null 2>&1 || true
-            [ -n "$old_nginx" ] && [ "$old_nginx" != "$NGINX_IMAGE" ] && docker image rm -f "$old_nginx" >/dev/null 2>&1 || true
+            # grep が no-match で exit 1 → pipefail+set -e で中断するのを防ぐ（|| true で空に）。
+            old_app=$(grep -E '^APP_IMAGE=' .env.bak | head -n1 | cut -d= -f2- || true)
+            old_proxy=$(grep -E '^PROXY_IMAGE=' .env.bak | head -n1 | cut -d= -f2- || true)
+            [ -n "$old_app" ]   && [ "$old_app" != "$APP_IMAGE" ]     && docker image rm -f "$old_app"   >/dev/null 2>&1 || true
+            [ -n "$old_proxy" ] && [ "$old_proxy" != "$PROXY_IMAGE" ] && docker image rm -f "$old_proxy" >/dev/null 2>&1 || true
           fi
 
           rm -f .env.bak docker-compose.yml.bak
@@ -461,21 +463,21 @@ jobs:
             exit 1
           fi
           echo "デプロイ成功"
-          echo "  web:   ${WEB_IMAGE}"
-          echo "  nginx: ${NGINX_IMAGE}"
+          echo "  app:   ${APP_IMAGE}"
+          echo "  proxy: ${PROXY_IMAGE}"
 
       # ── デプロイ内容をサマリーに出力 ──────────────────────────────────────
       - name: Summary
         if: always()
         env:
           INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
-          WEB_IMAGE:   ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ needs.push.outputs.app_digest }}
-          NGINX_IMAGE: ${{ env.REGISTRY }}/${{ env.NGINX_IMAGE_NAME }}@${{ needs.push.outputs.proxy_digest }}
+          APP_IMAGE:   ${{ env.REGISTRY }}/${{ env.APP_IMAGE_NAME }}@${{ needs.push.outputs.app_digest }}
+          PROXY_IMAGE: ${{ env.REGISTRY }}/${{ env.PROXY_IMAGE_NAME }}@${{ needs.push.outputs.proxy_digest }}
         run: |
           echo "## Deploy (EC2 / SSM・digest 固定)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Instance | \`${INSTANCE_ID}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Web image | \`${WEB_IMAGE}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Nginx image | \`${NGINX_IMAGE}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| App image | \`${APP_IMAGE}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Proxy image | \`${PROXY_IMAGE}\` |" >> $GITHUB_STEP_SUMMARY
