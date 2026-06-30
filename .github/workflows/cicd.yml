@@ -11,6 +11,7 @@ on:
     paths-ignore:
       - 'README.md'
       - 'docs/**'
+  workflow_dispatch:   # 手動トリガー
 
 # ── 同時実行制御（ジョブ単位で制御）──────────────────────────────────────────
 #    test / build : 共通グループ(ci-*)で cancel-in-progress: true（後発ランが来ると停止）。
@@ -167,7 +168,7 @@ jobs:
       group: push-${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: false
     permissions:
-      contents: read
+      contents: none
       packages: write
       id-token: none
 
@@ -233,7 +234,7 @@ jobs:
           fi
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
-  # ── デプロイジョブ（方法1: EC2 ホストへ SSM 経由でデプロイ）─────────────────
+  # ── デプロイジョブ（EC2 ホストへ SSM 経由でデプロイ）─────────────────
   #    ECS は使わず、稼働中の EC2 上の docker-compose をイメージ差し替えで更新する。
   #
   #    前提（初回のみ手動で用意しておくこと）:
@@ -363,7 +364,7 @@ jobs:
 
           # 失敗時は直前の構成（.env / compose）へ戻して再起動し、非0で終了する。
           # ※ 初回デプロイは退避（.bak）が無くロールバック先が存在しないため、
-          #    壊れた新構成が起動したまま非0終了する（初回のみ手動復旧が前提）。
+          #    起動した壊れた新構成を停止（down）してから非0終了する（初回のみ手動復旧が前提）。
           if [ "$deploy_ok" != 1 ]; then
             echo "デプロイ検証に失敗。直前の構成へロールバックします。" >&2
             if [ -f docker-compose.yml.bak ]; then mv -f docker-compose.yml.bak docker-compose.yml; fi
@@ -373,11 +374,18 @@ jobs:
               docker compose up -d || true
               rolled_back=1
             fi
-            # ロールバックできた時のみ、未参照になった新イメージ（不正）を明示削除する。
-            # （初回など退避が無い場合は新イメージが稼働中なので消さない）。
-            # digest 参照は dangling 扱いされず prune では回収されないため rm で確実に消す。
             if [ "$rolled_back" = 1 ]; then
-              docker image rm -f "$WEB_IMAGE" "$NGINX_IMAGE" >/dev/null 2>&1 || true
+              # ロールバック後の .env には旧 digest が入っている。今回の新イメージが
+              # 旧と異なる時だけ削除する（同一 digest 再デプロイ時に稼働中を消さない）。
+              # digest 参照は prune で回収されないため rm で確実に消す。
+              old_web=$(grep -E '^WEB_IMAGE=' .env | head -n1 | cut -d= -f2-)
+              old_nginx=$(grep -E '^NGINX_IMAGE=' .env | head -n1 | cut -d= -f2-)
+              [ "$old_web"   != "$WEB_IMAGE"   ] && docker image rm -f "$WEB_IMAGE"   >/dev/null 2>&1 || true
+              [ "$old_nginx" != "$NGINX_IMAGE" ] && docker image rm -f "$NGINX_IMAGE" >/dev/null 2>&1 || true
+            else
+              # ロールバック先が無い（初回デプロイ等）。起動済みなら壊れた新構成を残さず停止する（未起動でも down は無害）。
+              echo "ロールバック先が無いため、新構成を停止します（手動復旧が必要）。" >&2
+              docker compose down || true
             fi
             exit 1
           fi
@@ -471,3 +479,25 @@ jobs:
           echo "| Instance | \`${INSTANCE_ID}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Web image | \`${WEB_IMAGE}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Nginx image | \`${NGINX_IMAGE}\` |" >> $GITHUB_STEP_SUMMARY
+
+  # ── クリーンアップジョブ（deploy 成功後のみ）─────────────────────────────
+  #    deploy 成功後に古い GHCR イメージをクリーンアップする。
+  #    tagged は削除せず untagged のみ削除する。
+  #    稼働中 digest は tagged 経由で参照されるため保護される。
+  #    GHCR 専用の dataaxiom/ghcr-cleanup-action を使用し、未タグ/孤児マニフェストの波及削除を正しく扱う。
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: deploy
+    if: github.event_name != 'pull_request'
+    permissions:
+      contents: none
+      packages: write  # パッケージバージョン削除に必要
+      id-token: none
+    steps:
+      - name: Prune old GHCR image versions
+        uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          packages: datecalc,datecalc-nginx
+          delete-untagged: true
+          delete-orphaned-images: true
