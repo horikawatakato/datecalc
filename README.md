@@ -3,8 +3,11 @@
 日数計算を行うWebアプリケーションです。HTTPSに対応しています。  
 AWS EC2上でコンテナ運用し、GitHub ActionsによるCI/CDを構築しています。
 
-**Webアプリケーション**  
+<br>
+  
 https://datecalc.duckdns.org/
+
+<br>
 
 ---
 
@@ -16,8 +19,7 @@ https://datecalc.duckdns.org/
 - 曜日の表示
 - 計算履歴の表示（最大8件、重複は自動排除）
 
-**テストカバレッジレポート**  
-https://horikawatakato.github.io/datecalc/coverage-report.html
+<br>
 
 ---
 
@@ -49,8 +51,7 @@ datecalc/
 │
 ├── docs/
 │   ├── cicd-workflow.svg           # CI/CDワークフロー図
-│   ├── container-architecture.svg  # コンテナ構成図
-│   └── coverage-report.html        # テストカバレッジレポート
+│   └── container-architecture.svg  # コンテナ構成図
 │
 ├── nginx/
 │   ├── Dockerfile                  # proxyコンテナイメージ用
