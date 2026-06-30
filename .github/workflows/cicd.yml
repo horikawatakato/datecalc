@@ -479,25 +479,3 @@ jobs:
           echo "| Instance | \`${INSTANCE_ID}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Web image | \`${WEB_IMAGE}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Nginx image | \`${NGINX_IMAGE}\` |" >> $GITHUB_STEP_SUMMARY
-
-  # ── クリーンアップジョブ（deploy 成功後のみ）─────────────────────────────
-  #    deploy 成功後に古い GHCR イメージをクリーンアップする。
-  #    tagged は削除せず untagged のみ削除する。
-  #    稼働中 digest は tagged 経由で参照されるため保護される。
-  #    GHCR 専用の dataaxiom/ghcr-cleanup-action を使用し、未タグ/孤児マニフェストの波及削除を正しく扱う。
-  cleanup:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs: deploy
-    if: github.event_name != 'pull_request'
-    permissions:
-      contents: none
-      packages: write  # パッケージバージョン削除に必要
-      id-token: none
-    steps:
-      - name: Prune old GHCR image versions
-        uses: dataaxiom/ghcr-cleanup-action@v1
-        with:
-          packages: app,proxy
-          delete-untagged: true
-          delete-orphaned-images: true
