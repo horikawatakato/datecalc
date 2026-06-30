@@ -22,8 +22,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: horikawatakato/datecalc
-  NGINX_IMAGE_NAME: horikawatakato/datecalc-nginx
+  IMAGE_NAME: horikawatakato/app
+  NGINX_IMAGE_NAME: horikawatakato/proxy
 
 jobs:
   # ── テストジョブ ────────────────────────────────────────────────────────────
@@ -498,6 +498,6 @@ jobs:
       - name: Prune old GHCR image versions
         uses: dataaxiom/ghcr-cleanup-action@v1
         with:
-          packages: datecalc,datecalc-nginx
+          packages: app,proxy
           delete-untagged: true
           delete-orphaned-images: true
