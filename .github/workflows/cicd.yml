@@ -306,11 +306,40 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      # ── stale デプロイの抑止 ───────────────────────────────────────────────
+      #    push / deploy は走行中を止めない設計（cancel-in-progress: false）のため、
+      #    待機キューの実行順は保証されない。ブランチ先端がこのランの SHA より新しい
+      #    場合、後発ランが最新を反映するので本ランのデプロイはスキップし、古い digest
+      #    で上書きするのを防ぐ（後続の Deploy / Summary をこの出力でゲート）。
+      - name: Skip if a newer commit exists on the branch
+        id: staleness
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # ブランチ先端のリモート最新 SHA。checkout の認証済み origin を使うので
+          # fetch-depth（浅いクローン）に依存せず取得できる。
+          # ls-remote がネットワーク/認証で失敗しても set -e で即中断せず、空扱いにして
+          # 下の -z 判定（安全側で続行）へ委ねる。
+          latest=$(git ls-remote origin "refs/heads/${BRANCH}" | cut -f1) || latest=""
+          if [ -z "$latest" ]; then
+            echo "::warning::${BRANCH} の最新 SHA を取得できませんでした。安全側でデプロイを続行します。"
+            echo "is_latest=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$latest" != "$GITHUB_SHA" ]; then
+            echo "::notice::${BRANCH} の最新は ${latest}。本ラン(${GITHUB_SHA})はより古いためデプロイをスキップします（後発ランが最新を反映）。"
+            echo "is_latest=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_latest=true" >> "$GITHUB_OUTPUT"
+          fi
+
       # ── SSM Run Command で EC2 上の compose を digest 固定で入れ替え ───────
       #      push が出力した不変の manifest digest（@sha256:...）で app/proxy を固定。
       #      タグの上書き・再付与に左右されず、ビルドした成果物そのものを確実にデプロイする。
       #      あわせてリポジトリの docker-compose.yml を base64 で送り、ホスト側へ書き出す。
       - name: Deploy to EC2 via SSM
+        if: steps.staleness.outputs.is_latest == 'true'
         env:
           APP_DIR:     ${{ vars.APP_DIR }}
           DOMAIN:      ${{ vars.DOMAIN }}
@@ -468,7 +497,9 @@ jobs:
 
       # ── デプロイ内容をサマリーに出力 ──────────────────────────────────────
       - name: Summary
-        if: always()
+        # デプロイをスキップした場合（stale）は「デプロイ済み」と誤表示しないよう出さない。
+        # 失敗時（is_latest=true のままエラー）は原因調査のため出力する。
+        if: always() && steps.staleness.outputs.is_latest != 'false'
         env:
           INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
           APP_IMAGE:   ${{ env.REGISTRY }}/${{ env.APP_IMAGE_NAME }}@${{ needs.push.outputs.app_digest }}
