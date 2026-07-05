@@ -1,14 +1,16 @@
 """DateCalc.py のユニットテスト（カバレッジ100%）"""
 
-import runpy
-from datetime import date, timedelta
-from unittest import mock
-
-import pytest
+from datetime import date, datetime, timedelta, timezone
 
 import DateCalc as D
 
 TODAY = date(2026, 6, 3)
+
+
+def test_get_today_is_jst():
+    # get_today は日本標準時(UTC+9)の「今日」を返す
+    assert D.JST == timezone(timedelta(hours=9))
+    assert D.get_today() == datetime.now(timezone(timedelta(hours=9))).date()
 
 
 def test_get_weekday():
@@ -36,32 +38,12 @@ def test_is_valid_date():
 
 def test_format_year_label():
     assert D.format_year_label(2026) == "2026"
-    assert D.format_year_label(-100) == "紀元前100"
+    assert D.format_year_label(-100) == "BC100"
 
 
 def test_diff_days():
     assert D.diff_days(date(2026, 6, 13), TODAY) == 10
     assert D.diff_days(date(2026, 5, 24), TODAY) == -10
-
-
-def test_parse_year():
-    assert D.parse_year("2026") == 2026
-    assert D.parse_year(" -999 ") == -999
-    assert D.parse_year("9999") == 9999
-    assert D.parse_year("abc") is None
-    assert D.parse_year("12a") is None
-    assert D.parse_year("10000") is None
-    assert D.parse_year("-1000") is None
-    assert D.parse_year("0") is None
-
-
-def test_parse_month_or_day():
-    assert D.parse_month_or_day("6", 1, 99) == 6
-    assert D.parse_month_or_day("99", 1, 99) == 99
-    assert D.parse_month_or_day("abc", 1, 99) is None
-    assert D.parse_month_or_day("0", 1, 99) is None
-    assert D.parse_month_or_day("100", 1, 99) is None
-    assert D.parse_month_or_day("5", min_val=10, max_val=20) is None
 
 
 def test_calculate_today():
@@ -70,7 +52,7 @@ def test_calculate_today():
     assert r["cls"] == "today"
     assert r["diff"] == 0
     assert r["diff_label"] == "今日"
-    assert r["date_label"] == "2026年6月3日(水)"
+    assert r["date_label"] == "2026年6月3日 (水)"
 
 
 def test_calculate_future_small():
@@ -132,7 +114,7 @@ def test_calculate_bc_100():
     r = D.calculate(-100, 1, 1, TODAY)
     assert r["ok"] is True
     assert r["cls"] == "past"
-    assert r["date_label"].startswith("紀元前100年1月1日")
+    assert r["date_label"].startswith("BC100年1月1日")
     assert r["diff_label"] == "776294日前 / 2125年153日前"
     assert "0年前" not in r["diff_label"]
 
@@ -212,64 +194,3 @@ def test_proleptic_date_sub():
     assert (a - date(1, 1, 1)) == timedelta(days=99)
     # date 以外との減算は NotImplemented を返す
     assert a.__sub__("x") is NotImplemented
-
-
-def test_print_result_ok(capsys):
-    r = D.calculate(2030, 3, 15, TODAY)
-    D.print_result(r)
-    out = capsys.readouterr().out
-    assert "2030年3月15日" in out
-    assert "[未来]" in out
-
-
-def test_print_result_error(capsys):
-    r = D.calculate(2021, 2, 29, TODAY)
-    D.print_result(r)
-    assert "エラー" in capsys.readouterr().out
-
-
-def test_print_history_empty(capsys):
-    D.print_history([])
-    assert "(履歴なし)" in capsys.readouterr().out
-
-
-def test_print_history_items(capsys):
-    r = D.calculate(2030, 3, 15, TODAY)
-    D.print_history([r])
-    out = capsys.readouterr().out
-    assert "1." in out
-    assert "2030年3月15日" in out
-
-
-def test_main_full_flow(capsys):
-    inputs = [
-        "h", "2021 2 29", "5 6 7", "1 2 3", "1 2 3", "h",
-        "x y", "0 1 1", "2020 0 1", "2020 1 0", "c", "q",
-    ]
-    with mock.patch("builtins.input", side_effect=inputs):
-        D.main()
-    out = capsys.readouterr().out
-    assert "日数計算機" in out
-    assert "(履歴なし)" in out
-    assert "この日付は存在しません" in out
-    assert "履歴をクリアしました" in out
-    assert "終了します" in out
-
-
-def test_main_eof(capsys):
-    with mock.patch("builtins.input", side_effect=EOFError):
-        D.main()
-    assert "終了します" in capsys.readouterr().out
-
-
-def test_main_quit_variants(capsys):
-    for cmd in ("quit", "exit"):
-        with mock.patch("builtins.input", side_effect=[cmd]):
-            D.main()
-    assert "終了します" in capsys.readouterr().out
-
-
-def test_module_run_as_main(capsys):
-    with mock.patch("builtins.input", side_effect=EOFError):
-        runpy.run_path(D.__file__, run_name="__main__")
-    assert "日数計算機" in capsys.readouterr().out

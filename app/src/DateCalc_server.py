@@ -2,7 +2,7 @@
 DateCalc サーバー (DateCalc_server.py)
 =======================================
 Flask で軽量な HTTP サーバーを立て、DateCalc.py の計算ロジックを Web API として公開する。
-このファイル自身は計算を持たず、DateCalc.calculate / get_weekday に委譲する薄い橋渡し役で、
+このファイル自身は計算を持たず、DateCalc.calculate / get_weekday / get_today に委譲する薄い橋渡し役で、
 DateCalc.html はこのサーバー経由で Python 側の計算結果を受け取る。
 
 エンドポイント:
@@ -17,7 +17,6 @@ DateCalc.html はこのサーバー経由で Python 側の計算結果を受け�
 
 import sys
 import os
-from datetime import date
 from flask import Flask, request, jsonify, send_from_directory
 
 # どの作業ディレクトリから起動しても下の `from DateCalc import ...` を解決できるよう、
@@ -29,7 +28,7 @@ sys.path.insert(0, BASE_DIR)
 STATIC_DIR = os.path.join(os.path.dirname(BASE_DIR), "static")
 
 # 計算ロジックは DateCalc.py に集約。このサーバーは呼び出して結果を中継するだけ
-from DateCalc import calculate, get_weekday
+from DateCalc import calculate, get_weekday, get_today
 
 app = Flask(__name__, static_folder=None)  # 自動の静的配信を無効化（.py などソースの露出を防ぐ）
 
@@ -46,7 +45,7 @@ def index():
 
 @app.route("/api/today")
 def api_today():
-    """今日の日付情報を返す。画面ヘッダーの「今日 — …」表示に使う。
+    """今日の日付情報を返す。
 
     Response JSON:
         {
@@ -56,7 +55,7 @@ def api_today():
             "weekday": str   # 漢字1文字。例: "木"
         }
     """
-    today = date.today()
+    today = get_today()
     return jsonify({
         "year":    today.year,
         "month":   today.month,
@@ -77,7 +76,7 @@ def api_calculate():
     Response JSON (成功):
         {
             "ok":         true,
-            "date_label": str,   # 例: "2030年1月1日(木)"
+            "date_label": str,   # 例: "2030年1月1日 (火)"
             "diff":       int,   # 今日との差（未来=正、過去=負）
             "diff_label": str,   # 例: "1321日後 / 3年225日後"
             "cls":        str    # "today" | "future" | "past"
@@ -99,7 +98,7 @@ def api_calculate():
     except (KeyError, ValueError):
         return jsonify({"ok": False, "error": "year / month / day を整数で指定してください"}), 400
 
-    today = date.today()
+    today = get_today()
     result = calculate(year, month, day, today)
     return jsonify(result)
 

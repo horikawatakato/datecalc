@@ -1,8 +1,7 @@
 """
 日数計算機 (DateCalc.py)
 
-入力した日付と「今日」の差を日数で求め、人間に読みやすい形（例:「1380日後 / 3年284日後」）で
-表示する対話型 CLI ツール。計算結果は最新順に最大 MAX_HISTORY 件まで履歴として保持する。
+入力した日付と今日の差を日数で求める計算エンジン。Web アプリ（DateCalc_server.py 経由の /api/*）から利用される。
 
 主な特徴:
   - 紀元前（負の年）に対応。日付計算はすべて先発グレゴリオ暦（proleptic Gregorian calendar）で行う。
@@ -12,17 +11,21 @@
     通日(ordinal)だけを保持する自前の _ProlepticDate で補う。
 """
 
-from datetime import date, timedelta
-import re
+from datetime import date, datetime, timedelta, timezone
 
 # ── 定数 ──────────────────────────────────────────────────────────────────────
 # date.weekday() は 月曜=0 … 日曜=6 を返すので、その並びに合わせて漢字を並べる
 WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"]
-# 履歴として保持する最大件数
-MAX_HISTORY = 8
+# 日本標準時（UTC+9）
+JST = timezone(timedelta(hours=9))
 
 
 # ── ユーティリティ ────────────────────────────────────────────────────────────
+def get_today() -> date:
+    """今日の日付を日本標準時で返す。"""
+    return datetime.now(JST).date()
+
+
 def get_weekday(d: date) -> str:
     """date の曜日を漢字1文字（月〜日）で返す。"""
     return WEEKDAYS[d.weekday()]
@@ -105,39 +108,8 @@ def describe_diff(diff: int, target: tuple, today: tuple) -> str:
 
 
 def format_year_label(year: int) -> str:
-    """年を表示用の文字列にする（紀元前は「紀元前N」、西暦はそのまま）。"""
-    return f"紀元前{abs(year)}" if year < 0 else str(year)
-
-
-# ── 入力バリデーション ────────────────────────────────────────────────────────
-def parse_year(s: str) -> int | None:
-    """年の入力文字列を整数に変換する。妥当でなければ None。
-
-    受け付けるのは符号付き整数のみで、許容範囲は -999〜-1 と 1〜9999。
-    正規表現が先頭桁を 1-9 に限定するため「0」「01」「-0」などは弾かれる。
-    """
-    s = s.strip()
-    if not re.fullmatch(r'-?[1-9]\d*', s):
-        return None
-    val = int(s)
-    if val > 9999 or val < -999:
-        return None
-    return val
-
-
-def parse_month_or_day(s: str, min_val: int, max_val: int) -> int | None:
-    """月または日の入力文字列を整数に変換する。妥当でなければ None。
-
-    ここでは「正の整数で min_val〜max_val に収まるか」という大まかな確認だけを行う。
-    月が12を超える・日が月末を超える等の暦上の正確な妥当性は is_valid_date が最終判定する。
-    """
-    s = s.strip()
-    if not re.fullmatch(r'[1-9]\d*', s):
-        return None
-    val = int(s)
-    if val < min_val or val > max_val:
-        return None
-    return val
+    """年を表示用の文字列にする（紀元前は「BCN」、西暦はそのまま）。"""
+    return f"BC{abs(year)}" if year < 0 else str(year)
 
 
 # ── メインロジック ────────────────────────────────────────────────────────────
@@ -146,7 +118,7 @@ def calculate(year: int, month: int, day: int, today: date) -> dict:
 
     成功時の辞書:
         ok         : True
-        date_label : 表示用の日付（例: "2030年3月15日(金)"）
+        date_label : 表示用の日付（例: "2030年3月15日 (金)"）
         diff       : 今日との差（日数。未来=正、過去=負）
         diff_label : 差を整形した文字列（例: "1380日後 / 3年284日後"）
         cls        : "today" | "future" | "past"
@@ -169,7 +141,7 @@ def calculate(year: int, month: int, day: int, today: date) -> dict:
 
     diff = diff_days(target, today)
     year_label = format_year_label(year)
-    date_label = f"{year_label}年{month}月{day}日({weekday})"
+    date_label = f"{year_label}年{month}月{day}日 ({weekday})"
 
     cls = "today" if diff == 0 else ("future" if diff > 0 else "past")
 
@@ -181,7 +153,7 @@ def calculate(year: int, month: int, day: int, today: date) -> dict:
     return {
         "ok": True,
         "date_label": date_label,
-        "diff": diff,          # 公開API(/api/calculate)用の符号付き日数。CLI・同梱HTMLは未使用だが契約として返す
+        "diff": diff,          # 公開API用の符号付き日数（HTMLは未使用だが契約として返す）
         "diff_label": diff_label,
         "cls": cls,
     }
@@ -256,92 +228,3 @@ def _proleptic_date(astro_year: int, month: int, day: int):
 def _weekday_proleptic(target: _ProlepticDate) -> str:
     """_ProlepticDate の曜日を返す。通日1 = date(1,1,1) = 月曜 を基準に、7 で割った余りで求める。"""
     return WEEKDAYS[(target.ordinal - 1) % 7]
-
-
-# ── CLIインターフェース ────────────────────────────────────────────────────────
-def print_result(result: dict) -> None:
-    """計算結果をコンソールに表示する。"""
-    if not result["ok"]:
-        print(f"  エラー: {result['error']}")
-        return
-
-    cls_label = {"today": "今日", "future": "未来", "past": "過去"}.get(result["cls"], "")
-    print(f"  {result['date_label']}")
-    print(f"  {result['diff_label']}  [{cls_label}]")
-
-
-def print_history(history: list) -> None:
-    """履歴をコンソールに表示する。"""
-    if not history:
-        print("  (履歴なし)")
-        return
-    for i, h in enumerate(history, 1):
-        print(f"  {i}. {h['date_label']}  →  {h['diff_label']}")
-
-
-def main() -> None:
-    """対話ループ本体。日付入力のほか h=履歴 / c=履歴クリア / q=終了 を受け付ける。"""
-    today = date.today()
-    weekday_today = get_weekday(today)
-    print("日数計算機")
-    print(f"今日 — {today.year}年{today.month}月{today.day}日({weekday_today})")
-    print("=" * 40)
-    print("コマンド: 日付入力（例: 2030 3 15）/ h=履歴 / c=履歴クリア / q=終了")
-    print()
-
-    history: list = []
-
-    while True:
-        try:
-            raw = input("日付を入力（年 月 日）> ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print("\n終了します。")
-            break
-
-        if raw in ("q", "quit", "exit"):
-            print("終了します。")
-            break
-
-        if raw in ("h", "history"):
-            print_history(history)
-            continue
-
-        if raw in ("c", "clear"):
-            history.clear()
-            print("  履歴をクリアしました。")
-            continue
-
-        parts = raw.split()
-        if len(parts) != 3:
-            print("  入力形式が正しくありません。「年 月 日」の順に半角スペース区切りで入力してください。")
-            print("  例: 2030 3 15  /  -100 1 1（紀元前100年1月1日）")
-            continue
-
-        year = parse_year(parts[0])
-        if year is None:
-            print("  年の入力が正しくありません。-999〜-1 または 1〜9999 の整数を入力してください（0は不可）。")
-            continue
-
-        month = parse_month_or_day(parts[1], 1, 99)
-        if month is None:
-            print("  月の入力が正しくありません。1〜12 の整数を入力してください。")
-            continue
-
-        day = parse_month_or_day(parts[2], 1, 99)
-        if day is None:
-            print("  日の入力が正しくありません。1〜31 の整数を入力してください。")
-            continue
-
-        result = calculate(year, month, day, today)
-        print_result(result)
-
-        if result["ok"]:
-            # 同じ日付は重複させず先頭へ移動。最新順に MAX_HISTORY 件で打ち切る
-            history = [result] + [h for h in history if h["date_label"] != result["date_label"]]
-            history = history[:MAX_HISTORY]
-
-        print()
-
-
-if __name__ == "__main__":
-    main()
