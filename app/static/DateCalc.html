@@ -4,12 +4,18 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>日数計算機</title>
+  <meta name="description" content="日付を入力すると、今日との差（日数・年数）とその日の曜日を表示する日数計算機。紀元前999年〜西暦9999年対応。">
+  <!-- モバイルのブラウザ UI（アドレスバー等）の色をテーマに合わせる -->
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#16130e" media="(prefers-color-scheme: dark)">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;600&display=swap" rel="stylesheet">
   <style>
-    /* 配色・余白はすべて :root のカスタムプロパティに集約（ここを変えればテーマ全体が変わる） */
+    /* 配色は :root に集約（ここでテーマ全体を管理） */
     :root {
+      color-scheme: light dark;   /* キャレット・スクロールバー等の OS 描画をテーマに追従させる */
       --bg: #ffffff;
       --surface: #f5f4f0;
+      --field-bg: #eeece8;
       --border: #dedad2;
       --accent: #9a6e2e;
       --accent-dim: #b8904a;
@@ -20,9 +26,37 @@
       --future: #2e6eb8;
       --today-col: #27ae60;
       --error: #a83e3e;
+      --shadow: 0 1px 2px rgba(26,24,20,0.04), 0 6px 18px rgba(26,24,20,0.05);
+      --ring: rgba(184,144,74,0.28);
+    }
+
+    /* ダーク時のみ配色を差し替え（構造・余白は共通） */
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #16130e;
+        --surface: #201c15;
+        --field-bg: #272219;
+        --border: #39332a;
+        --accent: #dcac67;
+        --accent-dim: #b8904a;
+        --text: #ece7de;
+        --text-muted: #9c948a;
+        --text-dim: #c3bcb0;
+        --past: #e57468;
+        --future: #6fa8e2;
+        --today-col: #52cd8f;
+        --error: #e58072;
+        --shadow: 0 1px 2px rgba(0,0,0,0.30), 0 8px 24px rgba(0,0,0,0.35);
+        --ring: rgba(220,172,103,0.30);
+      }
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    ::selection {
+      background: var(--ring);
+      color: var(--text);
+    }
 
     body {
       background: var(--bg);
@@ -33,6 +67,8 @@
       align-items: flex-start;
       justify-content: center;
       padding: 2rem 1rem;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
     }
 
     body::before {
@@ -47,7 +83,7 @@
 
     .container {
       width: 100%;
-      max-width: 560px;
+      max-width: 590px;
     }
 
     header {
@@ -63,16 +99,26 @@
       text-transform: uppercase;
     }
 
+    /* 見出しと今日の日付の間隔を保つためのスペーサー */
+    h1::after {
+      content: '';
+      display: block;
+      height: 2px;
+      margin-top: 0.8rem;
+    }
+
     .today-badge {
       margin-top: 0.6rem;
-      font-family: 'Noto Sans JP', sans-serif;
       font-size: 1.2rem;
       letter-spacing: 0.1em;
+      color: var(--text-dim);
     }
 
     .input-section {
       background: var(--surface);
       border: 1px solid var(--border);
+      border-radius: 4px;
+      box-shadow: var(--shadow);
       padding: 1.5rem;
       margin-bottom: 1.5rem;
       position: relative;
@@ -84,6 +130,7 @@
       top: 0; left: 0;
       width: 2px; height: 100%;
       background: var(--accent-dim);
+      border-radius: 4px 0 0 4px;
     }
 
     label {
@@ -104,14 +151,15 @@
     .date-fields {
       display: flex;
       align-items: center;
-      gap: 0;
-      background: #eeece8;
+      background: var(--field-bg);
       border: 1px solid var(--border);
-      transition: border-color 0.2s;
+      border-radius: 3px;
+      transition: border-color 0.2s, box-shadow 0.2s;
     }
 
     .date-fields:focus-within {
       border-color: var(--accent-dim);
+      box-shadow: 0 0 0 3px var(--ring);
     }
 
     .date-field-wrap {
@@ -127,17 +175,16 @@
       padding: 0.9rem 0;
       outline: none;
       color: var(--text);
+      caret-color: var(--accent);
       text-align: right;
     }
 
-    /* widths sized to content */
+    /* 各入力幅は桁数に合わせて固定（年=4桁／月・日=2桁） */
     #yearInput  { width: 4.2rem; padding-left: 0.3rem; }
     #monthInput { width: 2.2rem; }
     #dayInput   { width: 2.2rem; }
 
-
     .field-unit {
-      font-family: 'Noto Sans JP', sans-serif;
       font-size: 1.05rem;
       color: var(--text-muted);
       padding-right: 0.5rem;
@@ -147,13 +194,14 @@
     button {
       background: transparent;
       border: 1px solid var(--accent-dim);
+      border-radius: 3px;
       color: var(--accent);
       font-family: 'Noto Sans JP', sans-serif;
       font-size: 1rem;
       letter-spacing: 0.2em;
       padding: 0.7rem 1.2rem;
       cursor: pointer;
-      transition: all 0.2s;
+      transition: background-color 0.2s, color 0.2s, border-color 0.2s, transform 0.08s;
     }
 
     button:hover {
@@ -162,7 +210,28 @@
       border-color: var(--accent);
     }
 
-    /* タッチ端末では計算・クリア・「−」ボタンのタップ後に背景を残さず元に戻す（PCのホバーは不変） */
+    button:active { transform: translateY(1px); }
+
+    /* キーボード操作時のみフォーカスリングを表示 */
+    button:focus-visible,
+    .clear-btn:focus-visible {
+      outline: 2px solid var(--accent-dim);
+      outline-offset: 2px;
+    }
+
+    /* 計算中（fetch 中）の二重送信防止状態を視覚化 */
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+      transform: none;
+    }
+    button:disabled:hover {
+      background: transparent;
+      color: var(--accent);
+      border-color: var(--accent-dim);
+    }
+
+    /* タッチ端末：タップ後に背景を残さない（PCのホバーは不変） */
     @media (hover: none) {
       .bc-toggle:hover,
       #calcBtn:hover,
@@ -185,6 +254,8 @@
     .result-card {
       background: var(--surface);
       border: 1px solid var(--border);
+      border-radius: 4px;
+      box-shadow: var(--shadow);
       padding: 1.5rem;
       animation: fadeSlide 0.3s ease;
       position: relative;
@@ -201,18 +272,19 @@
     .result-card.is-past   { border-left: 2px solid var(--past); }
 
     .result-date {
-      font-size: 1.3rem;
+      font-size: 1.2rem;
       font-weight: 600;
       letter-spacing: 0.05em;
-      margin-bottom: 0.4rem;
+      color: var(--text-dim);
+      margin-bottom: 0.2rem;
     }
 
     .result-diff {
-      font-size: 2rem;
+      font-size: 2.4rem;
       font-weight: 300;
-      font-family: 'Noto Sans JP', sans-serif;
-      line-height: 1;
-      margin: 0.6rem 0;
+      letter-spacing: 0.01em;
+      line-height: 1.1;
+      margin: 0.5rem 0 0;
     }
 
     .is-today  .result-diff { color: var(--today-col); }
@@ -221,11 +293,11 @@
 
     .error-msg {
       color: var(--error);
-      font-size: 1.1rem;
+      font-size: 1.2rem;
       line-height: 1.6;
     }
 
-    /* History */
+    /* 履歴 */
     .history { margin-top: 1.5rem; }
 
     .history-header {
@@ -235,10 +307,18 @@
       margin-bottom: 0.6rem;
     }
 
+    .history-title {
+      font-size: 0.85rem;
+      font-weight: 400;
+      letter-spacing: 0.3em;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
 
     .clear-btn {
       background: none;
       border: 1px solid var(--border);
+      border-radius: 3px;
       color: var(--text-muted);
       font-size: 0.8rem;
       letter-spacing: 0.2em;
@@ -267,11 +347,13 @@
       padding: 0.4rem 0.8rem;
       background: var(--surface);
       border: 1px solid var(--border);
-      font-family: 'Noto Sans JP', sans-serif;
+      border-radius: 3px;
+      transition: border-color 0.2s;
     }
 
+    .history-item:hover { border-color: var(--accent-dim); }
+
     .history-item-date { color: var(--text-dim); }
-    .history-item-diff { font-weight: 400; }
     .history-item-diff.future { color: var(--future); }
     .history-item-diff.past   { color: var(--past); }
     .history-item-diff.today  { color: var(--today-col); }
@@ -282,7 +364,6 @@
 
       header { margin-bottom: 1.8rem; }
       h1 { font-size: 1.6rem; letter-spacing: 0.25em; }
-      .today-badge { font-size: 1.05rem; }
 
       .input-section { padding: 1.2rem; }
 
@@ -340,8 +421,8 @@
         </div>
       </div>
       <button type="button" id="bcToggle" class="bc-toggle">−</button>
-      <button id="calcBtn">計算</button>
-      <button id="clearInputBtn">クリア</button>
+      <button type="button" id="calcBtn">計算</button>
+      <button type="button" id="clearInputBtn">クリア</button>
     </div>
   </div>
 
@@ -349,8 +430,8 @@
 
   <div class="history" id="historySection" style="display:none">
     <div class="history-header">
-      <!-- 左の空 span は space-between でクリアボタンを右端へ寄せるためのスペーサー -->
-      <span></span><button class="clear-btn" id="clearBtn">クリア</button>
+      <h2 class="history-title">履歴</h2>
+      <button type="button" class="clear-btn" id="clearBtn">クリア</button>
     </div>
     <ul class="history-list" id="historyList"></ul>
   </div>
@@ -359,28 +440,44 @@
 <script>
   // ─────────────────────────────────────────────────────────────────────────
   // DateCalc.html — Python API 呼び出し版
-  //
-  // このページ自身は日付計算を持たない。年月日を /api/calculate へ送り、
-  // 計算は DateCalc.py (Flask サーバー) 側で行い、その結果を表示するだけ。
-  // 画面・入力バリデーション・フォーカス移動・履歴表示はこのファイルが担当する。
+  // 差分の計算は持たず、年月日を /api/calculate（Flask 側）へ送って結果を表示する。
+  // 今日の表示（日付・曜日・時刻／JST）・入力バリデーション・フォーカス移動・履歴表示は本ファイルが担当する。
   // ─────────────────────────────────────────────────────────────────────────
 
-  // ── 今日の表示（Python API から取得） ────────────────────────────────────
-  fetch('/api/today')
-    .then(r => r.json())
-    .then(t => {
-      document.getElementById('todayBadge').textContent =
-        `今日 — ${t.year}年${t.month}月${t.day}日(${t.weekday})`;
-    })
-    .catch(() => {
-      // サーバーに繋がらない場合は、ブラウザのローカル日付で代替表示する
-      const WEEKDAYS = ["月","火","水","木","金","土","日"];
-      const d = new Date();
-      // getDay() は 日曜=0。月曜始まりの WEEKDAYS に合わせて添字をずらす
-      const wd = WEEKDAYS[d.getDay() === 0 ? 6 : d.getDay() - 1];
-      document.getElementById('todayBadge').textContent =
-        `今日 — ${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日(${wd})`;
-    });
+  // 曜日の漢字（月曜=0 … 日曜=6。サーバー DateCalc.py の WEEKDAYS と同じ並び）
+  const WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"];
+
+  // 今日の日付・曜日を日本標準時(JST)で求める
+  function getTodayParts() {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Tokyo', year: 'numeric', month: 'numeric', day: 'numeric',
+    }).formatToParts(new Date());
+    const num = t => parseInt(parts.find(p => p.type === t).value, 10);
+    const year = num('year'), month = num('month'), day = num('day');
+    // 曜日は JST の年月日から算出（getUTCDay の日曜=0 を月曜=0 に正規化）
+    const weekday = WEEKDAYS[(new Date(Date.UTC(year, month - 1, day)).getUTCDay() + 6) % 7];
+    return { year, month, day, weekday };
+  }
+
+  // 現在時刻を日本標準時(JST)で求める
+  function getTodayTime() {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(new Date());
+    const h = parseInt(parts.find(p => p.type === 'hour').value, 10);
+    const m = parts.find(p => p.type === 'minute').value;
+    return `${h}:${m}`;
+  }
+
+  // 今日の日付・曜日・時刻をヘッダーのバッジ（todayBadge）へ描画する
+  function renderTodayBadge() {
+    const t = getTodayParts();
+    document.getElementById('todayBadge').textContent =
+      `${t.year}年${t.month}月${t.day}日 (${t.weekday}) ${getTodayTime()}`;
+  }
+
+  renderTodayBadge();                    // 初回即描画
+  setInterval(renderTodayBadge, 1000);   // 毎秒更新（時刻の追従＋0時の日付切り替え）
 
   const yearInput      = document.getElementById('yearInput');
   const monthInput     = document.getElementById('monthInput');
@@ -418,8 +515,8 @@
   bcToggle.addEventListener('click', () => {
     const digits = yearInput.value.replace('-', '');
     yearInput.value = yearInput.value.startsWith('-') ? digits : '-' + digits;
-    normalizeYearValue();                          // PC の input 相当
-    if (/\d/.test(yearInput.value)) clampYearValue(); // 数字があるときだけ範囲補正（PCの blur 相当／単独「-」は維持）
+    normalizeYearValue();
+    if (/\d/.test(yearInput.value)) clampYearValue(); // 数字があるときだけ範囲補正（単独「-」は維持）
     yearInput.focus();
   });
 
@@ -500,7 +597,7 @@
   let history = [];
 
   function renderHistory() {
-    if (history.length === 0) { historySection.style.display = 'none'; return; }
+    if (history.length === 0) { historySection.style.display = 'none'; historyList.innerHTML = ''; return; }
     historySection.style.display = 'block';
     historyList.innerHTML = history.map(h => `
       <li class="history-item">
@@ -531,17 +628,19 @@
         return;
       }
 
-      // 正常結果を表示
+      // 正常結果を表示（紀元前は API 側で BC 表記のラベルが返る）
       resultArea.innerHTML = `
         <div class="result-card is-${data.cls}">
           <div class="result-date">${data.date_label}</div>
           <div class="result-diff">${data.diff_label}</div>
         </div>`;
 
-      // 履歴に追加（重複は先頭に移動、最大 8 件）
-      const entry = { dateStr: data.date_label, diffLabel: data.diff_label, cls: data.cls };
-      history = [entry, ...history.filter(h => h.dateStr !== entry.dateStr)].slice(0, 8);
-      renderHistory();
+      // 履歴に追加（今日は履歴に残さない。重複は先頭に移動、最大 5 件）
+      if (data.cls !== 'today') {
+        const entry = { dateStr: data.date_label, diffLabel: data.diff_label, cls: data.cls };
+        history = [entry, ...history.filter(h => h.dateStr !== entry.dateStr)].slice(0, 5);
+        renderHistory();
+      }
 
     } catch (err) {
       // ネットワークエラー・サーバー未起動など
