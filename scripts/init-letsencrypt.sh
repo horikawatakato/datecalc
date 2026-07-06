@@ -7,7 +7,7 @@
 #     proxyリロード）は obtain_cert() として本スクリプトに内蔵済み。別スクリプトは不要です。
 #
 #   実行する処理:
-#     - DOMAIN / EMAIL を引数で受け取る
+#     - EMAIL を引数(-e)で受け取り、DOMAIN は .env から読む
 #     - 事前チェック（DNS 一致 / 80番空き / openssl）… 失敗したら中断
 #     - ステージングで取得（レート制限を消費しない動作確認）
 #       └─ 取得成功後に、本番へ進むかの確認プロンプトを表示
@@ -15,19 +15,24 @@
 #     - 全サービス起動（docker compose up -d）とローカル動作確認
 #
 #   このスクリプトの「前提」（先に手動で済ませること）:
-#     - docker-compose.yml を同じディレクトリに配置済み（このスクリプトと 2 つだけでよい）
+#     - docker-compose.yml と .env を同じディレクトリに配置済み（本スクリプトと合わせて 3 点）
+#         .env には compose が必須とする値を記載する:
+#           DOMAIN=<your-domain>
+#           APP_IMAGE=ghcr.io/<owner>/app:latest      # 初回は :latest でよい
+#           PROXY_IMAGE=ghcr.io/<owner>/proxy:latest  #（本番デプロイ後は CI が digest 固定に上書き）
 #     - （private イメージなら）docker login ghcr.io 済み
-#     - （ECS から移行する場合のみ）既存 ECS を停止し 80番を解放済み
+#     - 80番を使用中のプロセスがあれば停止し解放済み
 #     - ホストに openssl があること（Amazon Linux / Ubuntu は標準で導入済み）
 #
-#   使い方（例: ドメイン myapp.duckdns.org / 連絡先 you@example.com の場合）:
-#     1) docker-compose.yml と本スクリプトを同じディレクトリに置き、そこへ移動する
+#   使い方:
+#     1) docker-compose.yml・.env・本スクリプトを同じディレクトリに置き、そこへ移動する
 #          cd /opt/app
 #     2) 実行権限を付与する
 #          chmod +x init-letsencrypt.sh
-#     3) myapp.duckdns.org / you@example.com を自分の値に置き換えて実行する
-#        （ドメインは proxy コンテナの環境変数 DOMAIN（compose / .env）と同じ値にすること）
-#          ./init-letsencrypt.sh -d myapp.duckdns.org -e you@example.com
+#     3) <your-email> を自分の値に置き換えて実行する
+#        （ドメインは .env の DOMAIN を使用する。DOMAIN / APP_IMAGE / PROXY_IMAGE は
+#         .env に記載し、compose がすべて必須として要求する）
+#          ./init-letsencrypt.sh -e <your-email>
 #     4) ステージング成功後の「本番証明書を取得しますか？ [y/N]」で y を入力すると本番取得へ進む
 # =============================================================================
 set -euo pipefail
@@ -38,7 +43,6 @@ cd "$APP_DIR"
 
 DATA_PATH="./certbot"        # 証明書等の保存先ベース（compose は ./certbot/conf を /etc/letsencrypt にマウント）
 RSA_KEY_SIZE=4096
-DOMAIN=""
 EMAIL=""
 
 die()  { echo "ERROR: $*" >&2; exit 1; }
@@ -46,9 +50,9 @@ info() { echo "### $*"; }
 
 usage() {
   cat <<USAGE
-Usage: $0 -d <domain> -e <email>
-  -d  取得するサブドメイン（例: myapp.duckdns.org / 環境変数 DOMAIN に設定したものと一致させる）
-  -e  連絡先メール（例: you@example.com）
+Usage: $0 -e <email>
+  -e  連絡先メールアドレス
+  （証明書を取得するドメインは .env の DOMAIN を使用）
 USAGE
   exit 1
 }
@@ -101,21 +105,24 @@ obtain_cert() {
 }
 
 # ── 引数解析 ────────────────────────────────────────────────────────────────
-while getopts ":d:e:h" opt; do
+while getopts ":e:h" opt; do
   case "$opt" in
-    d) DOMAIN="$OPTARG" ;;
     e) EMAIL="$OPTARG" ;;
     h|*) usage ;;
   esac
 done
-[ -n "$DOMAIN" ] && [ -n "$EMAIL" ] || usage
+[ -n "$EMAIL" ] || usage
 
 # ── 前提（配置・コマンド）の存在チェック ────────────────────────────────────
 info "前提チェック ..."
 [ -f docker-compose.yml ]     || die "docker-compose.yml が見つかりません（このスクリプトと同じディレクトリに配置してください）"
+[ -f .env ]                   || die ".env が見つかりません（DOMAIN/APP_IMAGE/PROXY_IMAGE を記載して同じディレクトリに配置してください）"
 command -v docker  >/dev/null || die "docker が見つかりません（Docker をインストールしてください）"
-command -v openssl >/dev/null || die "openssl がありません（例: sudo dnf install -y openssl / sudo apt install -y openssl）"
-docker compose config >/dev/null || die "docker-compose.yml の構文エラー"
+docker compose config >/dev/null || die "docker compose config に失敗しました（docker-compose.yml の記述エラー、または .env の必須変数 DOMAIN/APP_IMAGE/PROXY_IMAGE 未設定。上記のエラー内容を確認してください）"
+
+# .env から DOMAIN の値を取り出す（|| true で無マッチでも継続し、次行で未設定を判定）
+DOMAIN="$(grep -E '^[[:space:]]*DOMAIN[[:space:]]*=' .env | tail -n1 | cut -d= -f2- | awk '{print $1}' || true)"
+[ -n "$DOMAIN" ] || die ".env に DOMAIN が設定されていません"
 
 # 既存の本番証明書を誤って消さないよう、初回専用としてガードする
 if [ -d "$DATA_PATH/conf/live/$DOMAIN" ]; then
@@ -138,26 +145,26 @@ MYIP=""
            http://169.254.169.254/latest/meta-data/public-ipv4 || true)"
 DNSIP="$(getent hosts "$DOMAIN" | awk '{print $1}' | head -1 || true)"
 if [ -n "$MYIP" ]; then
-  echo "  EC2=$MYIP  DNS=$DNSIP"
+  echo "  EC2=$MYIP  $DOMAIN=$DNSIP"
   if [ "$MYIP" != "$DNSIP" ]; then
-    echo "  !! DNS が EC2 の IP と一致しません（DNS（DuckDNS 等）の設定を見直す）"; fail=1
+    echo "  !! $DOMAIN の DNS が EC2 を指していません（DNS 設定を見直す）"; fail=1
   else
     echo "  DNS 一致 OK"
   fi
 else
-  echo "  ?? IMDS から IP を取得できませんでした。'nslookup $DOMAIN' が EC2 の IP と"
-  echo "     一致するか手動で確認してください（DNS 解決結果=$DNSIP）"
+  echo "  ?? IMDS（EC2 のメタデータ）から IP を取得できませんでした。'nslookup $DOMAIN' で"
+  echo "     $DOMAIN が EC2 を指しているか手動で確認してください（DNS 解決結果=$DNSIP）"
 fi
 
-# ② 80番が空いているか（ECS や既存 compose が握っていないか）
+# ② 80番が空いているか（既存 compose や他プロセスが握っていないか）
 if sudo ss -ltnp 2>/dev/null | grep -q ':80 '; then
-  echo "  !! 80番が使用中です。既存 compose は 'docker compose down'、ECS 運用中なら ECS サービスを停止"; fail=1
+  echo "  !! 80番が使用中です。既存 compose なら 'docker compose down'、他プロセスならそれを停止"; fail=1
 else
   echo "  80番は空き OK"
 fi
 
 # ③ openssl（ダミー証明書の生成と最後の検証に必要）
-if command -v openssl >/dev/null; then echo "  openssl OK"; else echo "  !! openssl 無し"; fail=1; fi
+if command -v openssl >/dev/null; then echo "  openssl OK"; else echo "  !! openssl 無し（例: sudo dnf install -y openssl / sudo apt install -y openssl）"; fail=1; fi
 
 [ "$fail" -eq 0 ] || die "事前チェックに失敗しました。上記を解消してから再実行してください。"
 
@@ -165,7 +172,7 @@ if command -v openssl >/dev/null; then echo "  openssl OK"; else echo "  !! open
 info "ステージングで証明書取得を試行 ..."
 docker compose pull || die "docker compose pull に失敗（docker login ghcr.io を確認）"
 obtain_cert 1
-info "ステージング取得に成功しました。"
+info "ステージング証明書の取得に成功しました。"
 
 # ── 確認（ステージング結果を確認してから本番へ）──────────────────────────────
 printf "本番証明書を取得しますか？ [y/N] "
@@ -187,7 +194,7 @@ CERT="$DATA_PATH/conf/live/$DOMAIN/fullchain.pem"
 ISSUER="$(openssl x509 -in "$CERT" -noout -issuer)"
 echo "  $ISSUER"
 if echo "$ISSUER" | grep -qiE 'staging|fake'; then
-  die "まだステージング証明書です。原因を確認のうえ再実行してください。"
+  die "まだステージング証明書です（発行者に staging/fake が含まれます）。上記の発行者を確認のうえ再実行してください。"
 fi
 openssl x509 -in "$CERT" -noout -enddate
 
