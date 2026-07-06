@@ -20,8 +20,8 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  APP_IMAGE_NAME: horikawatakato/app
-  PROXY_IMAGE_NAME: horikawatakato/proxy
+  APP_IMAGE_NAME: ${{ github.repository_owner }}/app
+  PROXY_IMAGE_NAME: ${{ github.repository_owner }}/proxy
 
 jobs:
   # ── テストジョブ ────────────────────────────────────────────────────────────
@@ -121,6 +121,8 @@ jobs:
           build-args: |
             BUILD_DATE=${{ fromJSON(steps.meta-app.outputs.json).labels['org.opencontainers.image.created'] }}
             GIT_REVISION=${{ github.sha }}
+            GITHUB_REPOSITORY=${{ github.repository }}
+            GITHUB_SERVER_URL=${{ github.server_url }}
 
       - name: Build proxy image
         uses: docker/build-push-action@v7
@@ -136,6 +138,8 @@ jobs:
           build-args: |
             BUILD_DATE=${{ fromJSON(steps.meta-proxy.outputs.json).labels['org.opencontainers.image.created'] }}
             GIT_REVISION=${{ github.sha }}
+            GITHUB_REPOSITORY=${{ github.repository }}
+            GITHUB_SERVER_URL=${{ github.server_url }}
 
       - name: Upload app image artifact
         if: github.event_name != 'pull_request'
@@ -231,12 +235,12 @@ jobs:
           echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
   # ── デプロイジョブ（EC2 へ SSM 経由でデプロイ）────────────────────────
-  #    ECS は使わず、稼働中 EC2 の docker-compose をイメージ差し替えで更新する。
+  #    稼働中 EC2 の docker-compose をイメージ差し替えで更新する。
   #
   #    前提（初回のみ手動）:
   #      - EC2 で SSM エージェント稼働＋インスタンスロールに AmazonSSMManagedInstanceCore
   #        （CloudWatch 全文ログ用に logs:CreateLogGroup / CreateLogStream / PutLogEvents も）
-  #      - ホストの ${APP_DIR}（例 /opt/datecalc）に init-letsencrypt.sh 配置済み
+  #      - ホストの ${APP_DIR}（例 /opt/app）に init-letsencrypt.sh 配置済み
   #        （docker-compose.yml は毎回本ワークフローが配布。app/proxy のソースは不要＝GHCR から pull）
   #      - private イメージなら GHCR 認証済み（docker login）。または public にしておく
   #      - 初回の証明書取得（./init-letsencrypt.sh）完了済み
@@ -438,7 +442,7 @@ jobs:
           CMD_ID=$(aws ssm send-command \
             --instance-ids "${INSTANCE_ID}" \
             --document-name "AWS-RunShellScript" \
-            --comment "deploy datecalc ${GITHUB_SHA}" \
+            --comment "deploy ${GITHUB_REPOSITORY} ${GITHUB_SHA}" \
             --parameters file://params.json \
             --cloud-watch-output-config CloudWatchOutputEnabled=true \
             --query "Command.CommandId" --output text)

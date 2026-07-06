@@ -1,13 +1,13 @@
 services:
 
   # ── Nginx リバースプロキシ（TLS 終端）─────────────────────────────────────
-  #   CI/CD（方法1）からは docker compose pull で入れ替えるため、ホストでビルドせず
+  #   CI/CD からは docker compose pull で入れ替えるため、ホストでビルドせず
   #   GHCR の push 済みイメージを参照する。PROXY_IMAGE / APP_IMAGE は deploy が .env に
-  #   不変の digest 固定参照（…@sha256:…）として書き出す。未設定時は :latest にフォールバック。
+  #   不変の digest 固定参照（…@sha256:…）として書き出す。未設定なら起動を中止。
   #   ※ nginx 設定はこのイメージに焼き込まれる（テンプレート proxy/nginx.conf.template）。
   #     ドメイン名だけは起動時に環境変数 DOMAIN から envsubst で展開されるため、ここで渡す。
   proxy:
-    image: ${PROXY_IMAGE:-ghcr.io/horikawatakato/proxy:latest}
+    image: ${PROXY_IMAGE:?PROXY_IMAGE is required (set it in .env; deploy writes it by digest)}
     environment:
       - TZ=Asia/Tokyo          # コンテナのタイムゾーンを日本時間に設定
       - DOMAIN=${DOMAIN:?DOMAIN is required (set it in .env; deploy writes it from the GitHub repo variable)}  # nginx.conf に展開するドメイン
@@ -30,7 +30,7 @@ services:
 
   # ── Flask + Gunicorn (DateCalc) ───────────────────────────────────────────
   app:
-    image: ${APP_IMAGE:-ghcr.io/horikawatakato/app:latest}
+    image: ${APP_IMAGE:?APP_IMAGE is required (set it in .env; deploy writes it by digest)}
     environment:
       - TZ=Asia/Tokyo          # コンテナのタイムゾーンを日本時間に設定
       - WEB_CONCURRENCY=2      # Gunicorn ワーカー数（コンテナ資源に合わせ調整）

@@ -13,10 +13,11 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 # ────────────────────────────────────────────
 FROM python:3.12-slim
 
-# GHCR連携用ビルド引数（docker build --build-arg で上書き可能）
+# GHCR連携用ビルド引数（docker build --build-arg で指定）
+#   GITHUB_REPOSITORY / GITHUB_SERVER_URL はべた書きせず CI が渡す（未指定でもラベルが空になるだけ）
 ARG IMAGE_VERSION=latest
-ARG GITHUB_REPOSITORY=horikawatakato/datecalc
-ARG GITHUB_SERVER_URL=https://github.com
+ARG GITHUB_REPOSITORY
+ARG GITHUB_SERVER_URL
 ARG BUILD_DATE=unknown
 ARG GIT_REVISION=unknown
 
