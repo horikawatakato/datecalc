@@ -1,17 +1,44 @@
-# 本番イメージに不要なファイルをビルドコンテキストから除外する。
-# （依存パッケージは requirements.txt のみインストール済み。以下は実行に不要）
+# Python
+**/__pycache__/
+**/*.pyc
+**/*.egg-info/
 
-# テスト関連
+# 仮想環境
+.venv/
+venv/
+
+# テスト / カバレッジ
 tests/
 test_*.py
 pytest.ini
 requirements-dev.txt
-
-# Python キャッシュ
-__pycache__/
-*.pyc
 .pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
 
-# ビルド定義そのもの（イメージ内に持ち込む必要なし）
+# 環境変数
+**/.env
+**/.env.*
+
+# 証明書・秘密鍵
+**/*.pem
+**/*.key
+
+# ログ
+**/*.log
+
+# エディタ / IDE
+.vscode/
+.idea/
+**/*.swp
+
+# OS 生成ファイル
+**/Thumbs.db
+**/Desktop.ini
+**/.DS_Store
+
+# Docker ビルド関連
 Dockerfile
 .dockerignore
