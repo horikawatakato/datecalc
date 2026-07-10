@@ -23,8 +23,8 @@
       --text-muted: #8a8680;
       --text-dim: #5a5650;
       --past: #c0392b;
+      --today: #27ae60;
       --future: #2e6eb8;
-      --today-col: #27ae60;
       --error: #a83e3e;
       --shadow: 0 1px 2px rgba(26,24,20,0.04), 0 6px 18px rgba(26,24,20,0.05);
       --ring: rgba(184,144,74,0.28);
@@ -43,8 +43,8 @@
         --text-muted: #9c948a;
         --text-dim: #c3bcb0;
         --past: #e57468;
+        --today: #52cd8f;
         --future: #6fa8e2;
-        --today-col: #52cd8f;
         --error: #e58072;
         --shadow: 0 1px 2px rgba(0,0,0,0.30), 0 8px 24px rgba(0,0,0,0.35);
         --ring: rgba(220,172,103,0.30);
@@ -267,9 +267,9 @@
     }
 
     .result-card.is-error  { border-left: 2px solid var(--error); }
-    .result-card.is-today  { border-left: 2px solid var(--today-col); }
-    .result-card.is-future { border-left: 2px solid var(--future); }
     .result-card.is-past   { border-left: 2px solid var(--past); }
+    .result-card.is-today  { border-left: 2px solid var(--today); }
+    .result-card.is-future { border-left: 2px solid var(--future); }
 
     .result-date {
       font-size: 1.2rem;
@@ -287,9 +287,9 @@
       margin: 0.5rem 0 0;
     }
 
-    .is-today  .result-diff { color: var(--today-col); }
-    .is-future .result-diff { color: var(--future); }
     .is-past   .result-diff { color: var(--past); }
+    .is-today  .result-diff { color: var(--today); }
+    .is-future .result-diff { color: var(--future); }
 
     .error-msg {
       color: var(--error);
@@ -354,9 +354,9 @@
     .history-item:hover { border-color: var(--accent-dim); }
 
     .history-item-date { color: var(--text-dim); }
-    .history-item-diff.future { color: var(--future); }
     .history-item-diff.past   { color: var(--past); }
-    .history-item-diff.today  { color: var(--today-col); }
+    .history-item-diff.today  { color: var(--today); }
+    .history-item-diff.future { color: var(--future); }
 
     /* ───────── スマホ対応 ───────── */
     @media (max-width: 600px) {
@@ -593,6 +593,15 @@
     }
   });
 
+  // ── 出力エスケープ（サーバー応答を innerHTML に挿入する際の XSS 防御） ────────
+  //   要素内容は escapeHtml で無害化する。class 属性に入る cls は既知3値のみ許可し、未知値は空にする。
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+  const RESULT_CLASSES = new Set(['past', 'today', 'future']);
+  const safeCls = c => (RESULT_CLASSES.has(c) ? c : '');
+
   // ── 履歴 ─────────────────────────────────────────────────────────────────
   let history = [];
 
@@ -601,8 +610,8 @@
     historySection.style.display = 'block';
     historyList.innerHTML = history.map(h => `
       <li class="history-item">
-        <span class="history-item-date">${h.dateStr}</span>
-        <span class="history-item-diff ${h.cls}">${h.diffLabel}</span>
+        <span class="history-item-date">${escapeHtml(h.dateStr)}</span>
+        <span class="history-item-diff ${safeCls(h.cls)}">${escapeHtml(h.diffLabel)}</span>
       </li>`).join('');
   }
 
@@ -624,15 +633,15 @@
       if (!data.ok) {
         // Python 側からのエラー（存在しない日付など）
         resultArea.innerHTML =
-          `<div class="result-card is-error"><div class="error-msg">${data.error}</div></div>`;
+          `<div class="result-card is-error"><div class="error-msg">${escapeHtml(data.error)}</div></div>`;
         return;
       }
 
       // 正常結果を表示（紀元前は API 側で BC 表記のラベルが返る）
       resultArea.innerHTML = `
-        <div class="result-card is-${data.cls}">
-          <div class="result-date">${data.date_label}</div>
-          <div class="result-diff">${data.diff_label}</div>
+        <div class="result-card is-${safeCls(data.cls)}">
+          <div class="result-date">${escapeHtml(data.date_label)}</div>
+          <div class="result-diff">${escapeHtml(data.diff_label)}</div>
         </div>`;
 
       // 履歴に追加（今日は履歴に残さない。重複は先頭に移動、最大 5 件）
