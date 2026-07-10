@@ -12,29 +12,45 @@ http {
     access_log /var/log/nginx/access.log main;
     error_log  /var/log/nginx/error.log warn;
 
-    sendfile    on;
-    tcp_nopush  on;
+    sendfile          on;
+    tcp_nopush        on;
     keepalive_timeout 65;
 
+    # レスポンスから nginx バージョンを隠す（Server ヘッダ／エラーページの情報露出対策）
+    server_tokens off;
+
+    # text/html は gzip_types 指定なしでも常に対象になる
+    gzip            on;
+    gzip_vary       on;
+    gzip_comp_level 5;
+    gzip_min_length 256;
+    gzip_types      text/css text/javascript application/json;
+
+    # Docker 内蔵 DNS。下の resolve に必要。ipv6=off は compose の既定ネットワークが IPv4 のみのため
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
     # アップストリーム: Gunicorn（docker-compose サービス名 "app"）
+    #   resolve なしだと起動時に一度だけ名前解決して IP を固定するため、
+    #   デプロイで app コンテナが再作成されると次のリロードまで 502 を返し続ける。
     upstream flask_app {
-        server app:8000;
-        keepalive 32;
+        zone   flask_app 64k;      # resolve には共有メモリゾーンが必要
+        server app:8000 resolve;
     }
 
     # ── HTTP(80): ACME チャレンジ応答 + HTTPS へリダイレクト ──────────────────
     #   Let's Encrypt の HTTP-01 チャレンジ（/.well-known/acme-challenge/）だけは
-    #   リダイレクトせず素通しさせ、それ以外は 443 へ恒久リダイレクトする。
+    #   リダイレクトせず素通しさせ、それ以外は 443 へ恒久リダイレクトする
     server {
         listen 80;
-        server_name ${DOMAIN};   # CI のスモークテスト DOMAIN と一致させること
+        server_name ${DOMAIN};
 
         location /.well-known/acme-challenge/ {
             root /var/www/certbot;           # certbot の webroot と共有
         }
 
         location / {
-            return 301 https://$host$request_uri;
+            # server_name 不一致の Host も届くため、オープンリダイレクト防止に ${DOMAIN} 固定
+            return 301 https://${DOMAIN}$request_uri;
         }
     }
 
@@ -42,47 +58,49 @@ http {
     server {
         listen 443 ssl;
         http2 on;
-        server_name ${DOMAIN};   # 80番と同じドメイン。証明書パスとも一致させること
+        server_name ${DOMAIN};   # CI のスモークテストはこの名前で 443 を叩く
 
         # certbot が取得した証明書（certbot/conf ボリューム内）
         ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
         ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
 
-        # TLS の推奨設定
-        ssl_protocols       TLSv1.2 TLSv1.3;
-        ssl_ciphers         HIGH:!aNULL:!MD5;
-        ssl_prefer_server_ciphers on;
-        ssl_session_cache   shared:SSL:10m;
-        ssl_session_timeout 1d;
+        ssl_protocols             TLSv1.2 TLSv1.3;
 
+        # Mozilla intermediate から ECDHE のみ抜粋（TLSv1.3 のスイートには適用されない）。
+        #   HIGH は前方秘匿性のない静的 RSA 鍵交換（AES256-GCM-SHA384 等）も通すため使わない。
+        #   intermediate の DHE 系は ssl_dhparam 前提で、未設定の nginx は有効化しないため除外。
+        ssl_ciphers               ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+        # 全スイートが前方秘匿性を持つため、選択順はクライアントに委ねる
+        ssl_prefer_server_ciphers off;
+
+        ssl_session_cache         shared:SSL:10m;
+        ssl_session_timeout       1d;
+
+        # セキュリティレスポンスヘッダ: location に add_header を足すとこの server レベル分は継承されない（要再掲）
         # HSTS: 以後このホストへは常に HTTPS で接続させる（HTTP 強制対策）
-        add_header Strict-Transport-Security "max-age=31536000" always;
+        add_header Strict-Transport-Security "max-age=31536000"              always;
+        add_header X-Content-Type-Options    nosniff                         always;  # MIME スニッフィング抑止
+        add_header X-Frame-Options           SAMEORIGIN                      always;  # クリックジャッキング対策
+        add_header Referrer-Policy           strict-origin-when-cross-origin always;  # リファラ漏洩の抑制
+        # CSP: JS/CSS が全てインラインのため default-src は置かない（script/style/font 等は無制限のまま）。
+        #   'unsafe-inline' 無しで効く object-src/base-uri/frame-ancestors だけで実害を塞ぐ。
+        add_header Content-Security-Policy "object-src 'none'; base-uri 'self'; frame-ancestors 'self'" always;
 
         # ── / および /api/* はすべて Gunicorn へ ──────────────────────────
         location / {
             proxy_pass         http://flask_app;
-            proxy_http_version 1.1;
-            proxy_set_header Connection        "";   # upstream keepalive を有効化
 
-            proxy_set_header Host              $host;
+            proxy_set_header Host              $host;   # 既定の $proxy_host（= "flask_app"）を上書き
+
+            # クライアントが送った同名ヘッダは既定で素通しするため、必ず上書きして詐称を防ぐ。
+            # X-Forwarded-For だけは上書きせず実 IP を末尾に追記するので、信頼できるのは末尾のみ。
             proxy_set_header X-Real-IP         $remote_addr;
             proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto https;  # TLS 終端後なので https 固定
+            proxy_set_header X-Forwarded-Proto https;
 
             proxy_connect_timeout 60s;
             proxy_read_timeout    60s;
         }
-
-        # ── ヘルスチェック ─────────────────────────────────────────────────
-        location /api/today {
-            proxy_pass         http://flask_app;
-            proxy_http_version 1.1;
-            proxy_set_header   Connection        "";
-            proxy_set_header   Host              $host;
-            proxy_set_header   X-Real-IP         $remote_addr;
-            proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-            proxy_set_header   X-Forwarded-Proto https;
-            access_log off;
-        }
+        # /api/today 専用 location は不要（healthcheck は proxy を経由せず app コンテナ内 localhost:8000 を叩くため）
     }
 }

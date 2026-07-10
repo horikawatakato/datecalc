@@ -1,3 +1,13 @@
+# ── コンテナログの上限 ──────────────────────────────────────────────────────
+#   json-file はデフォルト無制限で、放置するとホストのディスクを食い潰す。
+#   proxy・app とも全リクエストを stdout に出す。
+#   ※ 溢れた古いログは失われる（ホスト外へ転送していないため復元不可）。
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
 
   # ── Nginx リバースプロキシ（TLS 終端）─────────────────────────────────────
@@ -8,48 +18,59 @@ services:
   #     ドメイン名だけは起動時に環境変数 DOMAIN から envsubst で展開されるため、ここで渡す。
   proxy:
     image: ${PROXY_IMAGE:?PROXY_IMAGE is required (set it in .env; deploy writes it by digest)}
+    security_opt:
+      - no-new-privileges:true   # setuid 等による権限昇格を禁止（defense-in-depth）
     environment:
-      - TZ=Asia/Tokyo          # コンテナのタイムゾーンを日本時間に設定
-      - DOMAIN=${DOMAIN:?DOMAIN is required (set it in .env; deploy writes it from the GitHub repo variable)}  # nginx.conf に展開するドメイン
+      - TZ=Asia/Tokyo
+      - DOMAIN=${DOMAIN:?DOMAIN is required (set it in .env; deploy writes it from the GitHub repo variable)}
     ports:
       - "80:80"     # HTTP（ACME チャレンジ + HTTPS へのリダイレクト用）
       - "443:443"   # HTTPS
+    # 書き込むのは cert サービスとホスト側（init-letsencrypt.sh）だけ。proxy は読むだけなので :ro
     volumes:
-      - ./certbot/conf:/etc/letsencrypt        # 取得した証明書の保存先（ホストに永続化）
-      - ./certbot/www:/var/www/certbot         # HTTP-01 チャレンジの webroot
+      - ./certbot/conf:/etc/letsencrypt:ro     # 取得した証明書の保存先（ホストに永続化）
+      - ./certbot/www:/var/www/certbot:ro      # HTTP-01 チャレンジの webroot
     depends_on:
       app:
         condition: service_healthy
     restart: unless-stopped
-    # command を上書きすると公式 entrypoint がテンプレート展開（envsubst）をスキップするため、
-    # まず 20-envsubst-on-templates.sh を明示実行して ${DOMAIN} 入りの nginx.conf を生成し、
-    # その後で「6 時間ごとに nginx をリロード（証明書更新の反映）」しつつ nginx を前景起動する。
+    logging: *default-logging
+    # command 上書きで公式 entrypoint が envsubst をスキップするため 20-envsubst-on-templates.sh で nginx.conf を生成。
+    #   失敗時は || exit 1 で即停止する（放置すると同梱の stock nginx.conf で起動してしまうため）。
+    # 6時間ごとにリロードして証明書更新を反映しつつ、exec で nginx を PID 1 にして
+    # docker stop 時の STOPSIGNAL=SIGQUIT を直接受けて graceful shutdown させる。
     command: >
-      /bin/sh -c "/docker-entrypoint.d/20-envsubst-on-templates.sh;
-      while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"
+      /bin/sh -c "/docker-entrypoint.d/20-envsubst-on-templates.sh || exit 1;
+      (while :; do sleep 6h & wait $${!}; nginx -s reload; done) &
+      exec nginx -g 'daemon off;'"
 
   # ── Flask + Gunicorn (DateCalc) ───────────────────────────────────────────
   app:
     image: ${APP_IMAGE:?APP_IMAGE is required (set it in .env; deploy writes it by digest)}
+    security_opt:
+      - no-new-privileges:true
     environment:
-      - TZ=Asia/Tokyo          # コンテナのタイムゾーンを日本時間に設定
+      - TZ=Asia/Tokyo
       - WEB_CONCURRENCY=2      # Gunicorn ワーカー数（コンテナ資源に合わせ調整）
     expose:
-      - "8000"           # proxy からのみアクセス可。外部には公開しない。
+      - "8000"           # 外部非公開・コンテナネットワーク内のみ（接続元は proxy）
     healthcheck:
       test: ["CMD", "python", "-c",
-             "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/today')"]
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/today', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
     restart: unless-stopped
+    logging: *default-logging
 
   # ── Certbot（Let's Encrypt 証明書の取得・自動更新）───────────────────────
   cert:
     image: certbot/certbot
+    security_opt:
+      - no-new-privileges:true
     environment:
-      - TZ=Asia/Tokyo          # コンテナのタイムゾーンを日本時間に設定
+      - TZ=Asia/Tokyo
     volumes:
       - ./certbot/conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
@@ -57,3 +78,4 @@ services:
     entrypoint: >
       /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done"
     restart: unless-stopped
+    logging: *default-logging
