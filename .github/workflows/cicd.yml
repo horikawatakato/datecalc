@@ -329,6 +329,7 @@ jobs:
       #      push が出力した digest（@sha256:...）で app/proxy を固定＝タグ上書きに左右されず
       #      成果物そのものをデプロイ。docker-compose.yml も base64 で送りホストへ書き出す。
       - name: Deploy to EC2 via SSM
+        id: deploy
         if: steps.staleness.outputs.is_latest == 'true'
         env:
           APP_DIR:     ${{ vars.APP_DIR }}
@@ -338,6 +339,9 @@ jobs:
           PROXY_IMAGE: ${{ env.REGISTRY }}/${{ env.PROXY_IMAGE_NAME }}@${{ needs.push.outputs.proxy_digest }}
         run: |
           set -euo pipefail
+
+          # ステップ終了時刻(JST)を Summary へ渡す。EXIT トラップなので成功/失敗どちらでも発火。
+          trap 'echo "finished_at=$(TZ=Asia/Tokyo date "+%Y/%m/%d %H:%M:%S")" >> "$GITHUB_OUTPUT"' EXIT
 
           # docker-compose.yml を改行なし base64 でホストへ渡す（JSON/シェルの引用を壊さない）。
           COMPOSE_B64=$(base64 -w0 docker-compose.yml)
@@ -367,7 +371,8 @@ jobs:
           # ロールバックへ回す（up -d は service_healthy 待ちで、unhealthy 時は非0で返り得る）。
           deploy_ok=0
           if docker compose pull && docker compose up -d; then
-            # E2E スモークテスト（proxy→app→TLS）を最大60秒待つ。
+            # E2E スモークテスト（TLS→proxy→app）。2秒間隔で最大30回試行
+            # （curl のタイムアウト5秒込みで最長 ~3.5分）。
             # --resolve でループバック経由でも本物の証明書名で検証する。
             for _ in $(seq 1 30); do
               if curl -fsS --max-time 5 \
@@ -480,20 +485,29 @@ jobs:
           echo "  app:   ${APP_IMAGE}"
           echo "  proxy: ${PROXY_IMAGE}"
 
-      # ── デプロイ内容をサマリーに出力 ──────────────────────────────────────
+      # ── デプロイ結果をサマリーに出力 ──────────────────────────────────────
       - name: Summary
-        # デプロイをスキップした場合（stale）は「デプロイ済み」と誤表示しないよう出さない。
-        # 失敗時（is_latest=true のままエラー）は原因調査のため出力する。
-        if: always() && steps.staleness.outputs.is_latest != 'false'
+        # is_latest=true（本ランが最新でデプロイを試行した）ときだけ出す。
+        #   - stale スキップ（is_latest=false）: 「デプロイ済み」と誤表示しないよう出さない。
+        #   - staleness 到達前の失敗（検証/認証/checkout）: 出力が空 → 出さない（誤表示防止）。
+        #   - デプロイ失敗（is_latest=true のままエラー）: 原因調査のため出力する。
+        if: always() && steps.staleness.outputs.is_latest == 'true'
         env:
-          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
-          APP_IMAGE:   ${{ env.REGISTRY }}/${{ env.APP_IMAGE_NAME }}@${{ needs.push.outputs.app_digest }}
-          PROXY_IMAGE: ${{ env.REGISTRY }}/${{ env.PROXY_IMAGE_NAME }}@${{ needs.push.outputs.proxy_digest }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          FINISHED_AT:    ${{ steps.deploy.outputs.finished_at }}
+          APP_IMAGE:      ${{ env.REGISTRY }}/${{ env.APP_IMAGE_NAME }}@${{ needs.push.outputs.app_digest }}
+          PROXY_IMAGE:    ${{ env.REGISTRY }}/${{ env.PROXY_IMAGE_NAME }}@${{ needs.push.outputs.proxy_digest }}
         run: |
-          echo "## Deploy (EC2 / SSM・digest 固定)" >> $GITHUB_STEP_SUMMARY
+          case "$DEPLOY_OUTCOME" in
+            success) RESULT="✅ 成功" ;;
+            failure) RESULT="❌ 失敗" ;;
+            *)       RESULT="⚠️ $DEPLOY_OUTCOME" ;;
+          esac
+          # 出力は「ラベル<br>値」を空行区切り。GFM は単一改行を空白に畳むため。
+          echo "**デプロイ結果**<br>${RESULT}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Item | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Instance | \`${INSTANCE_ID}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| App image | \`${APP_IMAGE}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Proxy image | \`${PROXY_IMAGE}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "**完了時刻**<br>${FINISHED_AT}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**App**<br>${APP_IMAGE}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Proxy**<br>${PROXY_IMAGE}" >> $GITHUB_STEP_SUMMARY
