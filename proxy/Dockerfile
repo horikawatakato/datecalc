@@ -1,22 +1,5 @@
 FROM nginx:1.30-alpine
 
-# GHCR連携用ビルド引数（docker build --build-arg で指定。app/Dockerfile と揃える）
-#   GITHUB_REPOSITORY / GITHUB_SERVER_URL はべた書きせず CI が渡す（未指定でもラベルが空になるだけ）
-ARG IMAGE_VERSION=latest
-ARG GITHUB_REPOSITORY
-ARG GITHUB_SERVER_URL
-ARG BUILD_DATE=unknown
-ARG GIT_REVISION=unknown
-
-# OCI標準ラベル（GHCRがリポジトリと自動紐づけするために必要）
-LABEL org.opencontainers.image.title="DateCalc nginx proxy" \
-      org.opencontainers.image.description="TLS-terminating nginx reverse proxy for DateCalc" \
-      org.opencontainers.image.version="${IMAGE_VERSION}" \
-      org.opencontainers.image.source="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
-      org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.created="${BUILD_DATE}" \
-      org.opencontainers.image.revision="${GIT_REVISION}"
-
 # ドメイン名はビルド時に焼き込まず、起動時に環境変数 DOMAIN から展開する。
 #   公式 nginx イメージの entrypoint が /etc/nginx/templates/*.template を envsubst で
 #   処理し、NGINX_ENVSUBST_OUTPUT_DIR へ書き出す（→ /etc/nginx/nginx.conf を生成）。
@@ -28,4 +11,6 @@ ENV NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx \
 # 80(HTTP リダイレクト/ACME) と 443(HTTPS) の両方を公開
 EXPOSE 80 443
 
+# 単体 docker run 用の既定起動。compose 経由では command で上書きされ、
+# envsubst→証明書リロードループ→exec nginx を明示実行する（docker-compose.yml 参照）。
 CMD ["nginx", "-g", "daemon off;"]
