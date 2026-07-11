@@ -13,10 +13,10 @@ on:
       - 'docs/**'
   workflow_dispatch:   # 手動トリガー
 
-# ── 同時実行制御（ジョブ単位で制御）──────────────────────────────────────────
-#    test / build : 共通グループ(ci-*)で cancel-in-progress: true（後発ランが来ると停止）。
-#    push         : 専用グループ(push-*)で cancel-in-progress: false（直列化）。
-#    deploy       : 専用グループ(deploy-*)で cancel-in-progress: false（直列化）。
+# ── 同時実行制御の方針（設定値は各ジョブの concurrency を参照）───────────────
+#    test / build : GHCR や本番へ影響を残さないので、後発ランが来たら中断してよい。
+#    push / deploy: 中断すると GHCR や本番ホストが中途半端な状態で残るため、走行中は
+#                   キャンセルせず直列化する（順序は保証されない ＝ deploy の staleness 判定で補正）。
 
 env:
   REGISTRY: ghcr.io
@@ -61,7 +61,8 @@ jobs:
         run: pytest --tb=short -v --cov=DateCalc --cov=DateCalc_server --cov-report=term-missing --cov-fail-under=100
 
   # ── ビルドジョブ ────────────────────────────────────────────────────────────
-  #    app・proxy を常にビルドして tar 出力し、push 用に artifact 保存（PR 時はアップロードをスキップ）。
+  #    app・proxy を常にビルドして tar 出力し、push 用に artifact 保存
+  #    （main 以外は push ジョブが動かないためアップロードをスキップ）。
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -118,11 +119,6 @@ jobs:
           outputs: type=docker,dest=/tmp/app.tar
           cache-from: type=gha,scope=app
           cache-to: type=gha,mode=max,scope=app
-          build-args: |
-            BUILD_DATE=${{ fromJSON(steps.meta-app.outputs.json).labels['org.opencontainers.image.created'] }}
-            GIT_REVISION=${{ github.sha }}
-            GITHUB_REPOSITORY=${{ github.repository }}
-            GITHUB_SERVER_URL=${{ github.server_url }}
 
       - name: Build proxy image
         uses: docker/build-push-action@v7
@@ -135,14 +131,9 @@ jobs:
           outputs: type=docker,dest=/tmp/proxy.tar
           cache-from: type=gha,scope=proxy
           cache-to: type=gha,mode=max,scope=proxy
-          build-args: |
-            BUILD_DATE=${{ fromJSON(steps.meta-proxy.outputs.json).labels['org.opencontainers.image.created'] }}
-            GIT_REVISION=${{ github.sha }}
-            GITHUB_REPOSITORY=${{ github.repository }}
-            GITHUB_SERVER_URL=${{ github.server_url }}
 
       - name: Upload app image artifact
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v7
         with:
           name: app-image
@@ -150,7 +141,7 @@ jobs:
           retention-days: 1
 
       - name: Upload proxy image artifact
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v7
         with:
           name: proxy-image
@@ -158,14 +149,14 @@ jobs:
           retention-days: 1
 
   # ── プッシュジョブ ──────────────────────────────────────────────────────────
-  #    build の artifact を取得し、app → proxy の順で GHCR へ Push（PR 時はスキップ）
+  #    build の artifact を取得し、app → proxy の順で GHCR へ Push。
+  #    main 以外（PR / 他ブランチの手動実行）ではスキップし、GHCR を汚さない。
   push:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: build
-    if: github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main'
     concurrency:
-      # GHCR 送信中の割り込みを避けるため直列化（走行中はキャンセルしない）
       group: push-${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: false
     permissions:
@@ -174,9 +165,9 @@ jobs:
       id-token: none
 
     outputs:
-      # deploy ジョブへ、実際に push した不変の manifest digest を引き渡す
-      app_digest:   ${{ steps.push-app.outputs.digest }}
-      proxy_digest: ${{ steps.push-proxy.outputs.digest }}
+      # deploy / Summary へ、実際に push した不変の digest 固定参照（…@sha256:…）を引き渡す
+      app_image:   ${{ steps.push-app.outputs.image }}
+      proxy_image: ${{ steps.push-proxy.outputs.image }}
 
     steps:
       - name: Login to GHCR
@@ -199,17 +190,20 @@ jobs:
         run: |
           set -euo pipefail
           docker load --input /tmp/app.tar
-          echo "$APP_TAGS" | while read -r tag; do
-            [ -n "$tag" ] && docker push "$tag"
-          done
-          # push 済みタグから不変の manifest digest を取得して出力。
-          # inspect/pipe 失敗で set -e が即中断しないよう || true で空にし、下の -z 判定へ委ねる。
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            docker push "$tag"
+          done <<< "$APP_TAGS"
+          # push 済みタグから digest 固定参照（<registry>/<name>@sha256:…）を取得して出力。
+          # 実際に push された名前がそのまま入る（metadata-action が小文字化済み）ため、
+          # deploy 側で名前を組み立て直さずに済む。
+          # inspect 失敗で set -e が即中断しないよう || true で空にし、下の -z 判定へ委ねる。
           first_tag=${APP_TAGS%%$'\n'*}
-          digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$first_tag" 2>/dev/null | cut -d'@' -f2 || true)
-          if [ -z "$digest" ]; then
-            echo "::error::app イメージの digest を取得できませんでした" >&2; exit 1
+          image=$(docker inspect --format='{{index .RepoDigests 0}}' "$first_tag" 2>/dev/null || true)
+          if [ -z "$image" ]; then
+            echo "::error::app イメージの digest 固定参照を取得できませんでした" >&2; exit 1
           fi
-          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
 
       - name: Download proxy image artifact
         uses: actions/download-artifact@v7
@@ -224,15 +218,16 @@ jobs:
         run: |
           set -euo pipefail
           docker load --input /tmp/proxy.tar
-          echo "$PROXY_TAGS" | while read -r tag; do
-            [ -n "$tag" ] && docker push "$tag"
-          done
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            docker push "$tag"
+          done <<< "$PROXY_TAGS"
           first_tag=${PROXY_TAGS%%$'\n'*}
-          digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$first_tag" 2>/dev/null | cut -d'@' -f2 || true)
-          if [ -z "$digest" ]; then
-            echo "::error::proxy イメージの digest を取得できませんでした" >&2; exit 1
+          image=$(docker inspect --format='{{index .RepoDigests 0}}' "$first_tag" 2>/dev/null || true)
+          if [ -z "$image" ]; then
+            echo "::error::proxy イメージの digest 固定参照を取得できませんでした" >&2; exit 1
           fi
-          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
 
   # ── デプロイジョブ（EC2 へ SSM 経由でデプロイ）────────────────────────
   #    稼働中 EC2 の docker-compose をイメージ差し替えで更新する。
@@ -251,7 +246,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: push
-    if: github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main'
     concurrency:
       group: deploy-${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: false
@@ -296,12 +291,12 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
 
-      # ── リポジトリを取得（docker-compose.yml をホストへ配布するため）─────
+      # ── リポジトリを取得 ──────────────────────────────────────────────────
+      #    docker-compose.yml のホスト配布と、次ステップの git ls-remote の両方に必要。
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      # ── stale デプロイの抑止 ───────────────────────────────────────────────
-      #    push / deploy は走行中を止めない（cancel-in-progress: false）ため実行順は不定。
+      # ── stale デプロイの抑止（実行順が不定な理由は冒頭の同時実行制御を参照）──────
       #    ブランチ先端が本ランの SHA より新しければデプロイをスキップし、古い digest での
       #    上書きを防ぐ（後発ランが最新を反映。Deploy / Summary をこの出力でゲート）。
       - name: Skip if a newer commit exists on the branch
@@ -326,8 +321,8 @@ jobs:
           fi
 
       # ── SSM Run Command で EC2 の compose を digest 固定で入れ替え ─────────
-      #      push が出力した digest（@sha256:...）で app/proxy を固定＝タグ上書きに左右されず
-      #      成果物そのものをデプロイ。docker-compose.yml も base64 で送りホストへ書き出す。
+      #      push が出力した digest 固定参照（…@sha256:...）で app/proxy を固定＝タグ上書きに
+      #      左右されず成果物そのものをデプロイ。docker-compose.yml も base64 で送りホストへ書き出す。
       - name: Deploy to EC2 via SSM
         id: deploy
         if: steps.staleness.outputs.is_latest == 'true'
@@ -335,8 +330,8 @@ jobs:
           APP_DIR:     ${{ vars.APP_DIR }}
           DOMAIN:      ${{ vars.DOMAIN }}
           INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
-          APP_IMAGE:   ${{ env.REGISTRY }}/${{ env.APP_IMAGE_NAME }}@${{ needs.push.outputs.app_digest }}
-          PROXY_IMAGE: ${{ env.REGISTRY }}/${{ env.PROXY_IMAGE_NAME }}@${{ needs.push.outputs.proxy_digest }}
+          APP_IMAGE:   ${{ needs.push.outputs.app_image }}
+          PROXY_IMAGE: ${{ needs.push.outputs.proxy_image }}
         run: |
           set -euo pipefail
 
@@ -443,7 +438,7 @@ jobs:
           JSON
 
           # --cloud-watch-output-config: 全文ログを CloudWatch Logs へ
-          #   （get-command-invocation は約2500文字で truncate されるため原因調査用に併用）。
+          #   （get-command-invocation の出力は先頭 24,000 文字で truncate されるため原因調査用に併用）。
           CMD_ID=$(aws ssm send-command \
             --instance-ids "${INSTANCE_ID}" \
             --document-name "AWS-RunShellScript" \
@@ -495,19 +490,21 @@ jobs:
         env:
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
           FINISHED_AT:    ${{ steps.deploy.outputs.finished_at }}
-          APP_IMAGE:      ${{ env.REGISTRY }}/${{ env.APP_IMAGE_NAME }}@${{ needs.push.outputs.app_digest }}
-          PROXY_IMAGE:    ${{ env.REGISTRY }}/${{ env.PROXY_IMAGE_NAME }}@${{ needs.push.outputs.proxy_digest }}
+          APP_IMAGE:      ${{ needs.push.outputs.app_image }}
+          PROXY_IMAGE:    ${{ needs.push.outputs.proxy_image }}
         run: |
           case "$DEPLOY_OUTCOME" in
             success) RESULT="✅ 成功" ;;
             failure) RESULT="❌ 失敗" ;;
             *)       RESULT="⚠️ $DEPLOY_OUTCOME" ;;
           esac
-          # 出力は「ラベル<br>値」を空行区切り。GFM は単一改行を空白に畳むため。
-          echo "**デプロイ結果**<br>${RESULT}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**完了時刻**<br>${FINISHED_AT}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**App**<br>${APP_IMAGE}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Proxy**<br>${PROXY_IMAGE}" >> $GITHUB_STEP_SUMMARY
+          # 出力は「ラベル<br>値」を空行区切り。GFM は単一改行を空白に畳むため <br> で改行する。
+          {
+            echo "**デプロイ結果**<br>${RESULT}"
+            echo ""
+            echo "**完了時刻**<br>${FINISHED_AT}"
+            echo ""
+            echo "**App**<br>${APP_IMAGE}"
+            echo ""
+            echo "**Proxy**<br>${PROXY_IMAGE}"
+          } >> "$GITHUB_STEP_SUMMARY"
