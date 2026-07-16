@@ -52,6 +52,15 @@ def test_api_calculate_invalid_date_returns_ok_false(client):
     assert "error" in data
 
 
+def test_api_calculate_year_out_of_range_returns_ok_false(client):
+    """対応範囲外の年も 200 のまま ok=False で返る（date の上限超えで 500 にしない）。"""
+    resp = client.get("/api/calculate", query_string={"year": 10000, "month": 1, "day": 1})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["ok"] is False
+    assert "error" in data
+
+
 def test_api_calculate_missing_param_returns_400(client):
     """必須パラメータ欠落（KeyError）は 400。"""
     resp = client.get("/api/calculate", query_string={"year": 2030, "month": 3})
@@ -62,5 +71,47 @@ def test_api_calculate_missing_param_returns_400(client):
 def test_api_calculate_non_integer_returns_400(client):
     """整数に変換できない値（ValueError）は 400。"""
     resp = client.get("/api/calculate", query_string={"year": "abc", "month": 3, "day": 15})
+    assert resp.status_code == 400
+    assert resp.get_json()["ok"] is False
+
+
+def test_api_calculate_content_type_is_json(client):
+    """正常時も 400 時も Content-Type は application/json。
+
+    HTML 側は「JSON でない応答＝通信エラー」で切り分けるので、この content-type が
+    崩れると正常な ok:false（存在しない日付など）が通信エラー表示に化ける。行カバレッジ
+    では検知できない契約なので、両ケースで明示的に固定する。
+    """
+    ok = client.get("/api/calculate", query_string={"year": 2030, "month": 3, "day": 15})
+    assert ok.content_type.startswith("application/json")
+    bad = client.get("/api/calculate", query_string={"year": "abc", "month": 3, "day": 15})
+    assert bad.status_code == 400
+    assert bad.content_type.startswith("application/json")
+
+
+def test_api_today_content_type_is_json(client):
+    """/api/today（ヘルスチェック用）も JSON を返す。"""
+    resp = client.get("/api/today")
+    assert resp.content_type.startswith("application/json")
+
+
+def test_api_calculate_negative_year_is_bc(client):
+    """負の年（歴史年代）が API 経由で受理され、BC 表記のラベルが返る。"""
+    resp = client.get("/api/calculate", query_string={"year": -100, "month": 3, "day": 1})
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["ok"] is True
+    assert data["date_label"].startswith("BC100年3月1日")
+
+
+@pytest.mark.parametrize("query", [
+    {"year": 2030, "month": 3},              # day 欠落
+    {"year": 2030, "day": 15},               # month 欠落
+    {"month": 3, "day": 15},                 # year 欠落
+    {},                                      # 全欠落
+])
+def test_api_calculate_any_missing_param_returns_400(client, query):
+    """必須パラメータのどれが欠けても（KeyError）400。"""
+    resp = client.get("/api/calculate", query_string=query)
     assert resp.status_code == 400
     assert resp.get_json()["ok"] is False
