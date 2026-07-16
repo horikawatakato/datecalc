@@ -8,9 +8,11 @@
   <!-- モバイルのブラウザ UI（アドレスバー等）の色をテーマに合わせる -->
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#16130e" media="(prefers-color-scheme: dark)">
+  <!-- フォント本体の取得先は gstatic（googleapis は下の link で即接続されるので preconnect 不要） -->
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;600&display=swap" rel="stylesheet">
   <style>
-    /* 配色は :root に集約（ここでテーマ全体を管理） */
+    /* 配色は :root に集約（ダークは下の media query で差し替え） */
     :root {
       color-scheme: light dark;   /* キャレット・スクロールバー等の OS 描画をテーマに追従させる */
       --bg: #ffffff;
@@ -75,6 +77,7 @@
       content: '';
       position: fixed;
       inset: 0;
+      z-index: -1;              /* 位置指定要素なので、明示しないと静的配置の本文より手前に来る */
       background:
         radial-gradient(ellipse 60% 50% at 20% 20%, rgba(154,110,46,0.04) 0%, transparent 60%),
         radial-gradient(ellipse 50% 60% at 80% 80%, rgba(142,62,168,0.03) 0%, transparent 60%);
@@ -99,7 +102,8 @@
       text-transform: uppercase;
     }
 
-    /* 見出しと今日の日付の間隔を保つためのスペーサー */
+    /* 見出しと今日の日付の間隔を保つスペーサー（margin ではなく空要素にして、
+       h1 の letter-spacing に影響されない一定の余白を挟む） */
     h1::after {
       content: '';
       display: block;
@@ -179,7 +183,7 @@
       text-align: right;
     }
 
-    /* 各入力幅は桁数に合わせて固定（年=4桁／月・日=2桁） */
+    /* 各入力幅は最長表示に合わせて固定（年=4文字「9999／-999」ぶん／月・日=2桁） */
     #yearInput  { width: 4.2rem; padding-left: 0.3rem; }
     #monthInput { width: 2.2rem; }
     #dayInput   { width: 2.2rem; }
@@ -242,6 +246,7 @@
       }
     }
 
+    /* 日付入力群と計算ボタンの間を空ける */
     #calcBtn { margin-left: 3rem; }
 
     /* 符号トグル（スマホのみ表示／計算・クリアと同じ配色） */
@@ -287,9 +292,14 @@
       margin: 0.5rem 0 0;
     }
 
-    .is-past   .result-diff { color: var(--past); }
-    .is-today  .result-diff { color: var(--today); }
-    .is-future .result-diff { color: var(--future); }
+    /* 状態→本文色の対応はここ1系統に集約。is-* が付いた要素（結果カード／履歴の差分）で
+       --diff-color が定まり、結果カードは子孫の .result-diff へ継承、履歴は同一要素で解決する。
+       cls が未知・空のときは --diff-color 未定義となり color は var(--text) へ落ちる */
+    .is-past   { --diff-color: var(--past); }
+    .is-today  { --diff-color: var(--today); }
+    .is-future { --diff-color: var(--future); }
+    .result-diff,
+    .history-item-diff { color: var(--diff-color); }
 
     .error-msg {
       color: var(--error);
@@ -353,10 +363,9 @@
 
     .history-item:hover { border-color: var(--accent-dim); }
 
+    /* 日付部分は控えめな色に。差分の色は上の --diff-color 系統でまとめて解決する
+       （history-item-diff には結果カードと同じ is- 接頭辞が付く） */
     .history-item-date { color: var(--text-dim); }
-    .history-item-diff.past   { color: var(--past); }
-    .history-item-diff.today  { color: var(--today); }
-    .history-item-diff.future { color: var(--future); }
 
     /* ───────── スマホ対応 ───────── */
     @media (max-width: 600px) {
@@ -408,7 +417,9 @@
     <div class="input-row">
       <div class="date-fields">
         <div class="date-field-wrap">
-          <input type="text" id="yearInput"  inputmode="numeric" maxlength="4" autocomplete="off" spellcheck="false">
+          <!-- maxlength=5 は正規化前に数字を最大5桁まで受ける MAX_YEAR_DIGITS に合わせた枠。
+               有効値は最長4文字（9999／-999）で、範囲外は桁を削らず clampYearValue が上限・下限へ寄せる -->
+          <input type="text" id="yearInput"  inputmode="numeric" maxlength="5" autocomplete="off" spellcheck="false">
           <span class="field-unit">年</span>
         </div>
         <div class="date-field-wrap">
@@ -426,12 +437,13 @@
     </div>
   </div>
 
+  <!-- 計算結果・エラーはここに動的に差し替わる -->
   <div class="result-area" id="resultArea"></div>
 
-  <div class="history" id="historySection" style="display:none">
+  <div class="history" id="historySection" hidden>
     <div class="history-header">
       <h2 class="history-title">履歴</h2>
-      <button type="button" class="clear-btn" id="clearBtn">クリア</button>
+      <button type="button" class="clear-btn" id="clearHistoryBtn">クリア</button>
     </div>
     <ul class="history-list" id="historyList"></ul>
   </div>
@@ -446,69 +458,102 @@
 
   // 曜日の漢字（月曜=0 … 日曜=6。サーバー DateCalc.py の WEEKDAYS と同じ並び）
   const WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"];
+  // 履歴に残す最大件数
+  const HISTORY_MAX = 5;
+  // 年の入力範囲。仕様の基準は DateCalc.py の MIN_HIST_YEAR / MAX_HIST_YEAR で、ここは入力補助
+  const MIN_YEAR = -999;
+  const MAX_YEAR = 9999;
+  // 符号を除いた数字の上限桁数。input の maxlength=5 を補う防御的な上限で、
+  // 桁で切り捨てるのが目的ではない。範囲外の値は clampYearValue が上限・下限へ寄せる
+  const MAX_YEAR_DIGITS = 5;
+  // 応答を待つ上限
+  const FETCH_TIMEOUT_MS = 10000;
 
-  // 今日の日付・曜日を日本標準時(JST)で求める
+  // 今日の日付・時刻(JST)を取り出すフォーマッタ。毎秒使うので生成は1回だけにする
+  const JST_FORMAT = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric', month: 'numeric', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  });
+
+  const yearInput       = document.getElementById('yearInput');
+  const monthInput      = document.getElementById('monthInput');
+  const dayInput        = document.getElementById('dayInput');
+  const resultArea      = document.getElementById('resultArea');
+  const historySection  = document.getElementById('historySection');
+  const historyList     = document.getElementById('historyList');
+  const calcBtn         = document.getElementById('calcBtn');
+  const clearInputBtn   = document.getElementById('clearInputBtn');
+  const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+  const bcToggle        = document.getElementById('bcToggle');
+  const todayBadge      = document.getElementById('todayBadge');
+
+  // ── 今日の表示（JST） ────────────────────────────────────────────────────
+  // 日付・曜日・時刻を日本標準時で求める（同じ瞬間から全項目を取り出す）
   function getTodayParts() {
-    const parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Asia/Tokyo', year: 'numeric', month: 'numeric', day: 'numeric',
-    }).formatToParts(new Date());
-    const num = t => parseInt(parts.find(p => p.type === t).value, 10);
-    const year = num('year'), month = num('month'), day = num('day');
-    // 曜日は JST の年月日から算出（getUTCDay の日曜=0 を月曜=0 に正規化）
+    const parts = JST_FORMAT.formatToParts(new Date());
+    const value = t => parts.find(p => p.type === t).value;
+    const year  = parseInt(value('year'), 10);
+    const month = parseInt(value('month'), 10);
+    const day   = parseInt(value('day'), 10);
+    // 曜日文字列はロケール依存になるため formatter からは取らず、JST の年月日から算出する。
+    // UTC 日付の index を WEEKDAYS で引く（getUTCDay の日曜=0 を月曜=0 に正規化）
     const weekday = WEEKDAYS[(new Date(Date.UTC(year, month - 1, day)).getUTCDay() + 6) % 7];
-    return { year, month, day, weekday };
+    const time = `${parseInt(value('hour'), 10)}:${value('minute')}`;   // 時は先頭ゼロを落とす
+    return { year, month, day, weekday, time };
   }
 
-  // 現在時刻を日本標準時(JST)で求める
-  function getTodayTime() {
-    const parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone: 'Asia/Tokyo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-    }).formatToParts(new Date());
-    const h = parseInt(parts.find(p => p.type === 'hour').value, 10);
-    const m = parts.find(p => p.type === 'minute').value;
-    return `${h}:${m}`;
-  }
+  let badgeText = '';   // 直前に描画したバッジ文字列。変化が無い秒は DOM を触らない
+  let todayKey  = '';   // 直前に描画した JST の日付
 
   // 今日の日付・曜日・時刻をヘッダーのバッジ（todayBadge）へ描画する
   function renderTodayBadge() {
     const t = getTodayParts();
-    document.getElementById('todayBadge').textContent =
-      `${t.year}年${t.month}月${t.day}日 (${t.weekday}) ${getTodayTime()}`;
+
+    // 0時をまたぐと、表示中の結果・履歴は前日の「今日」を基準にした古い値になるので消す
+    const key = `${t.year}-${t.month}-${t.day}`;
+    if (todayKey && key !== todayKey) clearResults();
+    todayKey = key;
+
+    const text = `${t.year}年${t.month}月${t.day}日 (${t.weekday}) ${t.time}`;
+    if (text === badgeText) return;
+    badgeText = text;
+    todayBadge.textContent = text;
   }
 
-  renderTodayBadge();                    // 初回即描画
-  setInterval(renderTodayBadge, 1000);   // 毎秒更新（時刻の追従＋0時の日付切り替え）
+  // ── 全角→半角の畳み込み ──────────────────────────────────────────────────
+  //   JS の \d は ASCII の [0-9] だけなので、全角数字を畳まずに [^\d] で濾すと入力が丸ごと消える。
+  //   IME を全角にしたままの入力や、日本語の文書からの貼り付けを救うため、濾す前に必ず通す。
+  //   マイナスは IME の状態次第で全角ハイフン・長音・各種ダッシュのいずれにもなりうるので、まとめて '-' へ寄せる。
+  const toHalfWidth = s => s
+    .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+    .replace(/[－−ー―‐–—]/g, '-');
 
-  const yearInput      = document.getElementById('yearInput');
-  const monthInput     = document.getElementById('monthInput');
-  const dayInput       = document.getElementById('dayInput');
-  const resultArea     = document.getElementById('resultArea');
-  const historySection = document.getElementById('historySection');
-  const historyList    = document.getElementById('historyList');
-  const calcBtn        = document.getElementById('calcBtn');
-  const clearInputBtn  = document.getElementById('clearInputBtn');
-  const clearBtn       = document.getElementById('clearBtn');
-  const bcToggle       = document.getElementById('bcToggle');
-
-  // ── 年フィールドの正規化（PC入力時の input ハンドラと同一処理） ──────────
-  //   先頭のマイナス1つ ＋ 数字のみ、先頭ゼロ除去
+  // ── 年フィールドの正規化（input のたびに呼ぶ） ───────────────────────────
+  //   先頭のマイナス1つ ＋ 数字のみ、先頭ゼロ除去、数字は MAX_YEAR_DIGITS 桁まで
   function normalizeYearValue() {
-    let v = yearInput.value;
-    const neg = v.startsWith('-');
-    let digits = v.replace(/[^\d]/g, '').replace(/^0+/, '');
-    // maxlength=4 を符号込みで再現（負号があるときは数字3桁まで）
-    const maxDigits = neg ? 3 : 4;
-    if (digits.length > maxDigits) digits = digits.slice(0, maxDigits);
-    v = (neg ? '-' : '') + digits;
+    const raw = toHalfWidth(yearInput.value);
+    const neg = raw.startsWith('-');
+    let digits = raw.replace(/[^\d]/g, '').replace(/^0+/, '');
+    if (digits.length > MAX_YEAR_DIGITS) digits = digits.slice(0, MAX_YEAR_DIGITS);
+    const v = (neg ? '-' : '') + digits;
     if (yearInput.value !== v) yearInput.value = v;
   }
 
-  // ── 年フィールドの範囲補正（PC入力時の blur ハンドラと同一処理） ──────────
+  // ── 年フィールドの範囲補正（blur と符号切り替えの後に呼ぶ） ───────────────
+  //   範囲外は桁を落とさず上限・下限へ寄せる（-2020 は BC202 ではなく BC999 になる）
   function clampYearValue() {
     const val = parseInt(yearInput.value, 10);
-    if (isNaN(val) || val === 0) { yearInput.value = ''; return; }
-    if (val > 9999)  { yearInput.value = '9999'; return; }
-    if (val < -999)  { yearInput.value = '-999'; return; }
+    if (isNaN(val)) yearInput.value = '';                        // 空・単独の「-」
+    else if (val > MAX_YEAR) yearInput.value = String(MAX_YEAR);
+    else if (val < MIN_YEAR) yearInput.value = String(MIN_YEAR);
+  }
+
+  // 数字があるときだけ範囲補正を通す（単独の「-」は消さずに残す）。
+  // bcToggle と calculate の送信直前で共有し、理由コメントをここ1箇所に集約する。
+  // blur 時は単独の「-」を消したいので、そこは clampYearValue を直接呼ぶ（別挙動）
+  function clampYearIfHasDigits() {
+    if (/\d/.test(yearInput.value)) clampYearValue();
   }
 
   // ── − ボタン：符号を切り替えたうえで、PCと同じ正規化・補正を通す ──────────
@@ -516,81 +561,89 @@
     const digits = yearInput.value.replace('-', '');
     yearInput.value = yearInput.value.startsWith('-') ? digits : '-' + digits;
     normalizeYearValue();
-    if (/\d/.test(yearInput.value)) clampYearValue(); // 数字があるときだけ範囲補正（単独「-」は維持）
+    clampYearIfHasDigits();   // 単独「-」は維持したまま範囲補正
     yearInput.focus();
   });
 
-  // ── 年フィールド：マイナス記号（先頭のみ）と数字だけを受け付ける ─────────
-  yearInput.addEventListener('keydown', ev => {
-    if (['Backspace','Delete','Tab','ArrowLeft','ArrowRight','Enter'].includes(ev.key)) return;
-    if (ev.key === '-') {
-      if (yearInput.selectionStart === 0 && !yearInput.value.startsWith('-')) return;
-      ev.preventDefault(); return;
-    }
-    if (!/^\d$/.test(ev.key)) { ev.preventDefault(); return; }
-    const pos = yearInput.selectionStart;
-    const val = yearInput.value;
-    const effectiveStart = val.startsWith('-') ? 1 : 0;
-    if (pos === effectiveStart && ev.key === '0') { ev.preventDefault(); return; }
-  });
-  yearInput.addEventListener('input', () => {
-    normalizeYearValue();
-  });
-  yearInput.addEventListener('blur', () => {
-    clampYearValue();
-  });
-
-  // ── 月・日フィールド：数字のみ、範囲外は自動補正 ────────────────────────
-  function makeNumericOnly(input, min, max) {
-    input.addEventListener('keydown', ev => {
-      if (['Backspace','Delete','Tab','ArrowLeft','ArrowRight','Enter'].includes(ev.key)) return;
-      if (!/^\d$/.test(ev.key)) { ev.preventDefault(); return; }
-      if (ev.key === '0' && input.value === '') { ev.preventDefault(); return; }
-    });
-    input.addEventListener('input', () => {
-      input.value = input.value.replace(/[^\d]/g, '').replace(/^0+/, '');
-    });
-    input.addEventListener('blur', () => {
-      const val = parseInt(input.value, 10);
-      if (!isNaN(val)) {
-        if (val < min) input.value = min;
-        else if (val > max) input.value = max;
-      }
-    });
+  // ── 入力キーの制限 ───────────────────────────────────────────────────────
+  //   数字以外の「文字キー」だけを弾く。修飾キー付き（Ctrl+V / Ctrl+A / Ctrl+Z 等）と
+  //   機能キー（Backspace・矢印・Home・End 等）はブラウザに任せる。
+  //   ここを通り抜けた不正な文字（貼り付け・ドラッグ&ドロップ）は input 側の正規化が取り除く。
+  function isBlockedKey(ev) {
+    if (ev.ctrlKey || ev.metaKey || ev.altKey) return false;
+    if (ev.key.length !== 1) return false;
+    return !/^\d$/.test(ev.key);
   }
 
-  makeNumericOnly(monthInput, 1, 99);
-  makeNumericOnly(dayInput,   1, 99);
-
   // ── フィールド間フォーカス移動 ───────────────────────────────────────────
-  function moveFocus(target, toEnd) {
+  function moveFocusToStart(target) {
     target.focus();
-    const pos = toEnd ? target.value.length : 0;
+    target.setSelectionRange(0, 0);
+  }
+  function moveFocusToEnd(target) {
+    target.focus();
+    const pos = target.value.length;
     target.setSelectionRange(pos, pos);
   }
 
-  yearInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); moveFocus(monthInput, false); }
-    if (e.key === 'ArrowRight' && yearInput.selectionStart === yearInput.value.length && yearInput.selectionEnd === yearInput.value.length) {
-      e.preventDefault(); moveFocus(monthInput, false);
-    }
+  const atStart = input => input.selectionStart === 0 && input.selectionEnd === 0;
+  const atEnd   = input => input.selectionStart === input.value.length && input.selectionEnd === input.value.length;
+
+  // ── 月・日フィールドの正規化：数字のみ（1〜99。maxlength=2 と先頭ゼロ除去で範囲は自明） ──
+  function normalizeDigits(input) {
+    const v = toHalfWidth(input.value).replace(/[^\d]/g, '').replace(/^0+/, '');
+    if (input.value !== v) input.value = v;
+  }
+
+  // ── フィールド共通の挙動をまとめて登録する ───────────────────────────────
+  //   3フィールドの違いは「隣が誰か」「Enter で何をするか」「正規化の中身」「符号を許すか」だけなので、
+  //   それだけを引数に取る。ここを1本にしておかないと、入力の直し（全角の畳み込み等）が3箇所に散る。
+  //     prev / next … Backspace（空のとき）・矢印キーで移動する隣のフィールド（無ければ省略）
+  //     onEnter     … Enter を押したときの動作
+  //     normalize   … input / IME 確定後に走らせる正規化
+  //     allowMinus  … 先頭のマイナス1つを許すか（年だけ true）
+  //     onBlur      … blur 時の追加処理（年の範囲補正）
+  function attachNumericField(input, { prev, next, onEnter, normalize, allowMinus = false, onBlur }) {
+    input.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter') { ev.preventDefault(); onEnter(); return; }
+      if (prev && ev.key === 'Backspace' && input.value === '') { ev.preventDefault(); moveFocusToEnd(prev); return; }
+      if (next && ev.key === 'ArrowRight' && atEnd(input))   { ev.preventDefault(); moveFocusToStart(next); return; }
+      if (prev && ev.key === 'ArrowLeft'  && atStart(input)) { ev.preventDefault(); moveFocusToEnd(prev); return; }
+
+      if (ev.ctrlKey || ev.metaKey || ev.altKey) return;   // ショートカットは素通し
+      if (allowMinus && ev.key === '-') {                  // 符号は先頭に1つだけ
+        if (input.selectionStart !== 0 || input.value.startsWith('-')) ev.preventDefault();
+        return;
+      }
+      if (isBlockedKey(ev)) { ev.preventDefault(); return; }
+      // 先頭の 0 は打たせない（入力しても正規化で消えるため）。年は符号の次を「先頭」とみなす
+      const effectiveStart = allowMinus && input.value.startsWith('-') ? 1 : 0;
+      if (ev.key === '0' && input.selectionStart === effectiveStart) ev.preventDefault();
+    });
+
+    // IME の変換中は value を書き換えない（変換候補が壊れる）。確定後にまとめて正規化する
+    input.addEventListener('input', ev => { if (!ev.isComposing) normalize(); });
+    input.addEventListener('compositionend', () => normalize());
+    if (onBlur) input.addEventListener('blur', onBlur);
+  }
+
+  attachNumericField(yearInput, {
+    next: monthInput,
+    onEnter: () => moveFocusToStart(monthInput),
+    normalize: normalizeYearValue,
+    allowMinus: true,
+    onBlur: clampYearValue,
   });
-  monthInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); moveFocus(dayInput, false); }
-    if (e.key === 'Backspace' && monthInput.value === '') { e.preventDefault(); moveFocus(yearInput, true); }
-    if (e.key === 'ArrowRight' && monthInput.selectionStart === monthInput.value.length && monthInput.selectionEnd === monthInput.value.length) {
-      e.preventDefault(); moveFocus(dayInput, false);
-    }
-    if (e.key === 'ArrowLeft' && monthInput.selectionStart === 0 && monthInput.selectionEnd === 0) {
-      e.preventDefault(); moveFocus(yearInput, true);
-    }
+  attachNumericField(monthInput, {
+    prev: yearInput,
+    next: dayInput,
+    onEnter: () => moveFocusToStart(dayInput),
+    normalize: () => normalizeDigits(monthInput),
   });
-  dayInput.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); calculate(); }
-    if (e.key === 'Backspace' && dayInput.value === '') { e.preventDefault(); moveFocus(monthInput, true); }
-    if (e.key === 'ArrowLeft' && dayInput.selectionStart === 0 && dayInput.selectionEnd === 0) {
-      e.preventDefault(); moveFocus(monthInput, true);
-    }
+  attachNumericField(dayInput, {
+    prev: monthInput,
+    onEnter: () => calculate(),
+    normalize: () => normalizeDigits(dayInput),
   });
 
   // ── 出力エスケープ（サーバー応答を innerHTML に挿入する際の XSS 防御） ────────
@@ -601,70 +654,124 @@
   }
   const RESULT_CLASSES = new Set(['past', 'today', 'future']);
   const safeCls = c => (RESULT_CLASSES.has(c) ? c : '');
+  // 既知3値のときだけ ` is-xxx` を返す。未知値では空文字にして裸の `is-` を残さない
+  const clsAttr = c => (safeCls(c) ? ` is-${safeCls(c)}` : '');
 
   // ── 履歴 ─────────────────────────────────────────────────────────────────
-  let history = [];
+  let historyItems = [];   // window.history を隠さないよう history とは別名にする
 
   function renderHistory() {
-    if (history.length === 0) { historySection.style.display = 'none'; historyList.innerHTML = ''; return; }
-    historySection.style.display = 'block';
-    historyList.innerHTML = history.map(h => `
+    historySection.hidden = historyItems.length === 0;
+    historyList.innerHTML = historyItems.map(h => `
       <li class="history-item">
         <span class="history-item-date">${escapeHtml(h.dateStr)}</span>
-        <span class="history-item-diff ${safeCls(h.cls)}">${escapeHtml(h.diffLabel)}</span>
+        <span class="history-item-diff${clsAttr(h.cls)}">${escapeHtml(h.diffLabel)}</span>
       </li>`).join('');
   }
 
+  // ── 結果表示 ─────────────────────────────────────────────────────────────
+  function showError(message) {
+    resultArea.innerHTML =
+      `<div class="result-card is-error"><div class="error-msg">${escapeHtml(message)}</div></div>`;
+  }
+
+  // 正常結果を結果カードとして描画（紀元前は API 側で BC 表記のラベルが返る）
+  function renderResult(data) {
+    resultArea.innerHTML = `
+      <div class="result-card${clsAttr(data.cls)}">
+        <div class="result-date">${escapeHtml(data.date_label)}</div>
+        <div class="result-diff">${escapeHtml(data.diff_label)}</div>
+      </div>`;
+  }
+
+  // 履歴へ追加（重複は先頭に移動、最大 HISTORY_MAX 件）
+  function pushHistory(data) {
+    const entry = { dateStr: data.date_label, diffLabel: data.diff_label, cls: data.cls };
+    historyItems = [entry, ...historyItems.filter(h => h.dateStr !== entry.dateStr)].slice(0, HISTORY_MAX);
+    renderHistory();
+  }
+
+  // 結果カードと履歴を消す（0時をまたいで「今日」の基準が変わったとき）
+  function clearResults() {
+    resultArea.innerHTML = '';
+    historyItems = [];
+    renderHistory();
+  }
+
   // ── 計算：fetch で Python API を呼び出す ──────────────────────────────────
+  // /api/calculate を叩いて結果 JSON を返す。通信・パース失敗時は例外を投げる（UI 制御は呼び出し側）。
+  // 対応範囲外・存在しない日付はサーバーが 200 + JSON（ok:false）で返す。
+  // （400 になるのは year/month/day が欠落・非整数のときだけで、その経路は上の入力チェックでほぼ通らない）
+  // どちらも JSON なので status は見ず、JSON でない応答（アプリの 500、プロキシの 502 など）だけを通信エラーとして扱う
+  async function fetchCalculation(yStr, mStr, dStr) {
+    const params = new URLSearchParams({ year: yStr, month: mStr, day: dStr });
+    const res = await fetch(`/api/calculate?${params}`, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    if (!(res.headers.get('content-type') || '').includes('application/json')) {
+      throw new Error(`unexpected response: ${res.status}`);
+    }
+    return res.json();
+  }
+
+  let inFlight = false;   // 実行中フラグ。ボタン連打だけでなく Enter 連打（calculate 直呼び）も弾く
+
   async function calculate() {
+    if (inFlight) return;
+
+    // ボタンのクリックでフォーカスを移さないブラウザ（Safari）では blur が発火せず範囲補正が走らないので、
+    // ここで必ず通す。「画面に出ている値＝送信する値」をブラウザによらず一致させる。
+    // 数字があるときだけ寄せるのは bcToggle と同じ理由で、単独の「-」を消して符号を戻さないため
+    clampYearIfHasDigits();
+
     const yStr = yearInput.value.trim();
     const mStr = monthInput.value.trim();
     const dStr = dayInput.value.trim();
-    if (!yStr || !mStr || !dStr) return;
+    if (!yStr || yStr === '-' || !mStr || !dStr) { showError('日付を入力してください'); return; }
 
-    // ボタンを無効化して二重送信を防止
-    calcBtn.disabled = true;
+    // 月・日が「単体で明らかに不正」な範囲だけ手前で弾き、無駄な通信を省く。
+    // 2/30 や平年の 2/29 のような年に依存する存在判定はサーバー(is_valid_date)に委ねる。
+    // 中身は normalizeDigits で数字のみ・先頭ゼロ無しが保証済みなので parseInt で足りる
+    const m = parseInt(mStr, 10);
+    const d = parseInt(dStr, 10);
+    // 文言はサーバー(is_valid_date)の返す「この日付は存在しません」と一致させ、
+    // クライアント判定かサーバー判定かでメッセージが割れないようにする
+    if (m < 1 || m > 12 || d < 1 || d > 31) { showError('この日付は存在しません'); return; }
 
+    inFlight = true;
+    calcBtn.disabled = true;   // 二重送信防止（inFlight）を視覚化
+
+    // try で包むのは通信と JSON パースだけ。結果の描画までここに入れると、
+    // 描画側のバグまで catch が「通信できませんでした」に化けさせてしまう
+    let data;
     try {
-      const params = new URLSearchParams({ year: yStr, month: mStr, day: dStr });
-      const res  = await fetch(`/api/calculate?${params}`);
-      const data = await res.json();
-
-      if (!data.ok) {
-        // Python 側からのエラー（存在しない日付など）
-        resultArea.innerHTML =
-          `<div class="result-card is-error"><div class="error-msg">${escapeHtml(data.error)}</div></div>`;
-        return;
-      }
-
-      // 正常結果を表示（紀元前は API 側で BC 表記のラベルが返る）
-      resultArea.innerHTML = `
-        <div class="result-card is-${safeCls(data.cls)}">
-          <div class="result-date">${escapeHtml(data.date_label)}</div>
-          <div class="result-diff">${escapeHtml(data.diff_label)}</div>
-        </div>`;
-
-      // 履歴に追加（今日は履歴に残さない。重複は先頭に移動、最大 5 件）
-      if (data.cls !== 'today') {
-        const entry = { dateStr: data.date_label, diffLabel: data.diff_label, cls: data.cls };
-        history = [entry, ...history.filter(h => h.dateStr !== entry.dateStr)].slice(0, 5);
-        renderHistory();
-      }
-
+      data = await fetchCalculation(yStr, mStr, dStr);
     } catch (err) {
-      // ネットワークエラー・サーバー未起動など
-      resultArea.innerHTML =
-        `<div class="result-card is-error"><div class="error-msg">` +
-        `サーバーに接続できません。<br>` +
-        `DateCalc_server.py が起動しているか確認してください。</div></div>`;
+      // ネットワークエラー・タイムアウト・サーバー側の障害。原因は握り潰さずコンソールに残す
+      console.error(err);
+      showError('サーバーと通信できませんでした。時間をおいて再度お試しください。');
+      return;
     } finally {
+      inFlight = false;
       calcBtn.disabled = false;
     }
+
+    if (!data.ok) {
+      // Python 側からのエラー（存在しない日付・対応範囲外など）
+      showError(data.error || 'エラーが発生しました');
+      return;
+    }
+
+    renderResult(data);
+    // 差0（今日）はヘッダーに常時出ており履歴に残す価値が無いため除く
+    if (data.cls !== 'today') pushHistory(data);
   }
 
   // ── イベント登録 ──────────────────────────────────────────────────────────
   calcBtn.addEventListener('click', calculate);
 
+  // クリアの3経路（消す対象が異なる。統合せず対応表で一望できるようにする）:
+  //   入力クリア(clearInputBtn)   … 入力欄 + 結果を消す（履歴は残す）
+  //   履歴クリア(clearHistoryBtn) … 履歴のみ消す
+  //   日付切替(clearResults)      … 結果 + 履歴を消す（入力欄は残す。0時をまたいだとき）
   clearInputBtn.addEventListener('click', () => {
     yearInput.value  = '';
     monthInput.value = '';
@@ -673,10 +780,14 @@
     yearInput.focus();
   });
 
-  clearBtn.addEventListener('click', () => {
-    history = [];
+  clearHistoryBtn.addEventListener('click', () => {
+    historyItems = [];
     renderHistory();
   });
+
+  // ── 起動 ─────────────────────────────────────────────────────────────────
+  renderTodayBadge();                    // 初回即描画
+  setInterval(renderTodayBadge, 1000);   // 毎秒更新（時刻の追従＋0時の日付切り替え）
 </script>
 </body>
 </html>
