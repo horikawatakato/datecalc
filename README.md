@@ -37,19 +37,19 @@ datecalc/
 ├── app/
 │   ├── src/
 │   │   ├── DateCalc.py             # 計算ロジック
-│   │   ├── DateCalc_server.py      # flask webサーバー（API）
+│   │   ├── DateCalc_server.py      # flask webサーバー（API・HTML配信）
 │   │   └── wsgi.py                 # gunicornエントリポイント
 │   ├── static/
 │   │   └── DateCalc.html           # webフロントエンド
 │   ├── tests/
-│   │   ├── test_DateCalc.py        # ユニットテスト（pytest）
-│   │   └── test_DateCalc_server.py # ユニットテスト（flask）
+│   │   ├── test_DateCalc.py        # ユニットテスト（計算ロジック）
+│   │   └── test_DateCalc_server.py # ユニットテスト（webサーバー）
 │   │
 │   ├── .dockerignore               # Dockerビルド除外設定
 │   ├── Dockerfile                  # appコンテナイメージ用
 │   ├── gunicorn.conf.py            # gunicorn設定
 │   ├── pytest.ini                  # pytest設定
-│   ├── requirements-dev.txt        # 開発用依存パッケージ（pytest）
+│   ├── requirements-dev.txt        # 開発用依存パッケージ（pytest・pytest-cov）
 │   └── requirements.txt            # 依存パッケージ（flask・gunicorn）
 │
 ├── docs/
@@ -58,11 +58,12 @@ datecalc/
 │
 ├── proxy/
 │   ├── Dockerfile                  # proxyコンテナイメージ用
-│   └── nginx.conf.template         # リバースプロキシ設定
+│   └── nginx.conf.template         # リバースプロキシ設定（TLS終端）
 │
 ├── scripts/
 │   └── init-letsencrypt.sh         # 初回証明書取得スクリプト
 │
+├── .gitattributes                  # 改行コード設定（LF固定）
 ├── .gitignore                      # Git管理除外設定
 ├── docker-compose.yml              # コンテナ構成定義
 ├── LICENSE                         # MITライセンス
