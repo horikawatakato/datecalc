@@ -1,3 +1,9 @@
+# nginx.conf のテンプレート。${DOMAIN} は nginx 変数ではなく起動時に envsubst で展開される
+#   （配置とフィルタは proxy/Dockerfile、実行トリガは docker-compose.yml の proxy.command）。
+
+# 公式イメージ同梱の nginx.conf ごと差し替えているため、そちらの auto は継承されない（ディレクティブ既定は 1）。
+#   nginx は非同期で 1 プロセスが多数の接続を捌くため、コア数に追従させても
+#   メモリ・コンテキストスイッチの代償が問題にならない。
 worker_processes auto;
 
 events {
@@ -8,29 +14,51 @@ http {
     include      /etc/nginx/mime.types;
     default_type application/octet-stream;
 
-    log_format main '$remote_addr - [$time_local] "$request" $status $body_bytes_sent';
+    # 上流(Gunicorn)のステータスと応答時間を記録し、遅延・エラーの所在（nginx 側かアプリ側か）を切り分ける。
+    log_format main '$remote_addr - [$time_local] "$request" $status $body_bytes_sent '
+                    '$request_time $upstream_status $upstream_response_time';
+    # 公式イメージではこの 2 つのパスが /dev/stdout・/dev/stderr へのシンボリックリンク。
+    #   json-file の上限は docker-compose.yml 側。
     access_log /var/log/nginx/access.log main;
     error_log  /var/log/nginx/error.log warn;
 
-    sendfile          on;
-    tcp_nopush        on;
-    keepalive_timeout 65;
+    # 公式イメージ同梱の nginx.conf ごと差し替えているため、そちらの sendfile on は継承されない。
+    #   どちらもディレクティブ既定は off なので、ここで明示しないと無効のままになる。
+    #   （効くのは nginx 自身が返す ACME チャレンジの 1 経路のみ）
+    sendfile   on;
+    tcp_nopush on;
 
-    # レスポンスから nginx バージョンを隠す（Server ヘッダ／エラーページの情報露出対策）
     server_tokens off;
 
-    # text/html は gzip_types 指定なしでも常に対象になる
+    # 全エンドポイントが GET でボディを取らない。既定 1MB のままでは捨てるだけのボディを読むため、
+    #   Content-Length があればボディを読む前に 413 を返す。
+    #   ※ POST を受けるエンドポイントを足す場合はここを引き上げること。
+    client_max_body_size 1k;
+
     gzip            on;
     gzip_vary       on;
+    # Via ヘッダ付き（企業プロキシ配下）でも圧縮するため any（既定 off はそこだけ非圧縮）。
+    gzip_proxied    any;
     gzip_comp_level 5;
     gzip_min_length 256;
-    gzip_types      text/css text/javascript application/json;
+    # text/html は既定で常に対象。CSS/JS は HTML にインライン化済みで独立配信しないため JSON だけ。
+    gzip_types      application/json;
+
+    # 単一 IP からの濫用ガード。値はアプリの容量からではなく、正当利用の上限
+    #   （1計算=1リクエスト。人間の連打でも数 r/s）を大きく超える水準として決めている。
+    #   nginx はホスト上でポート公開されており $binary_remote_addr に実クライアント IP が
+    #   入るのでキーに使える（クライアントが詐称できる X-Forwarded-For を使ってはいけない）。
+    #   ※ 前段に LB を置くとこのキーが LB の IP に潰れ、per-IP 制限が全体制限に化ける。
+    limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+    # 既定の 503 は「サーバ障害」の意味で、絞っただけのリクエストがアプリのダウンと同じ status で
+    #   ログに載り区別できない。429 と $upstream_status "-" の組がアプリ未到達の証拠になる。
+    limit_req_status 429;
 
     # Docker 内蔵 DNS。下の resolve に必要。ipv6=off は compose の既定ネットワークが IPv4 のみのため
+    #   （無指定だと余計な AAAA 問い合わせが走り解決失敗ログが出る）。
     resolver 127.0.0.11 valid=10s ipv6=off;
 
-    # アップストリーム: Gunicorn（docker-compose サービス名 "app"）
-    #   resolve なしだと起動時に一度だけ名前解決して IP を固定するため、
+    # resolve なしだと起動時に一度だけ名前解決して IP を固定するため、
     #   デプロイで app コンテナが再作成されると次のリロードまで 502 を返し続ける。
     upstream flask_app {
         zone   flask_app 64k;      # resolve には共有メモリゾーンが必要
@@ -38,18 +66,18 @@ http {
     }
 
     # ── HTTP(80): ACME チャレンジ応答 + HTTPS へリダイレクト ──────────────────
-    #   Let's Encrypt の HTTP-01 チャレンジ（/.well-known/acme-challenge/）だけは
-    #   リダイレクトせず素通しさせ、それ以外は 443 へ恒久リダイレクトする
     server {
         listen 80;
         server_name ${DOMAIN};
 
+        # 前方一致が長い方が優先されるため、この下の location / の 301 より先に当たる。
         location /.well-known/acme-challenge/ {
             root /var/www/certbot;           # certbot の webroot と共有
         }
 
         location / {
-            # server_name 不一致の Host も届くため、オープンリダイレクト防止に ${DOMAIN} 固定
+            # :80 の server はこれ 1 つだけで事実上の default_server として任意の Host を受理するため、
+            #   オープンリダイレクト防止にクライアント由来の $host ではなく ${DOMAIN} に固定する。
             return 301 https://${DOMAIN}$request_uri;
         }
     }
@@ -58,39 +86,56 @@ http {
     server {
         listen 443 ssl;
         http2 on;
-        server_name ${DOMAIN};   # CI のスモークテストはこの名前で 443 を叩く
+        server_name ${DOMAIN};
 
-        # certbot が取得した証明書（certbot/conf ボリューム内）
         ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
         ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
 
+        # TLS 設定は Mozilla intermediate（ガイドライン 6.0）準拠。準拠外は個別に明記する。
         ssl_protocols             TLSv1.2 TLSv1.3;
 
-        # Mozilla intermediate から ECDHE のみ抜粋（TLSv1.3 のスイートには適用されない）。
-        #   HIGH は前方秘匿性のない静的 RSA 鍵交換（AES256-GCM-SHA384 等）も通すため使わない。
-        #   intermediate の DHE 系は ssl_dhparam 前提で、未設定の nginx は有効化しないため除外。
+        # 6.0 の openssl_ciphers と完全一致で、全て ECDHE（前方秘匿性あり）。TLSv1.3 のスイートには適用されない。
         ssl_ciphers               ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
-        # 全スイートが前方秘匿性を持つため、選択順はクライアントに委ねる
+        # 選択順はクライアントに委ねてよい（上記のとおり全スイートに FS があるため）。
         ssl_prefer_server_ciphers off;
 
         ssl_session_cache         shared:SSL:10m;
         ssl_session_timeout       1d;
+        # これは Mozilla の規定ではなく独自判断。チケット鍵は reload 時（= compose の 6h ループ）に
+        #   しか再生成されないため、漏洩するとその窓の記録済みセッションを遡って復号でき、前方秘匿性が損なわれる。
+        #   無効化されるのはステートレスチケットのみで、TLS1.3 の再開は ssl_session_cache を使う
+        #   ステートフルチケットへ切り替わり維持される。
+        ssl_session_tickets       off;
 
-        # セキュリティレスポンスヘッダ: location に add_header を足すとこの server レベル分は継承されない（要再掲）
-        # HSTS: 以後このホストへは常に HTTPS で接続させる（HTTP 強制対策）
-        add_header Strict-Transport-Security "max-age=31536000"              always;
-        add_header X-Content-Type-Options    nosniff                         always;  # MIME スニッフィング抑止
-        add_header X-Frame-Options           SAMEORIGIN                      always;  # クリックジャッキング対策
-        add_header Referrer-Policy           strict-origin-when-cross-origin always;  # リファラ漏洩の抑制
-        # CSP: JS/CSS が全てインラインのため default-src は置かない（script/style/font 等は無制限のまま）。
-        #   'unsafe-inline' 無しで効く object-src/base-uri/frame-ancestors だけで実害を塞ぐ。
-        add_header Content-Security-Policy "object-src 'none'; base-uri 'self'; frame-ancestors 'self'" always;
+        # セキュリティレスポンスヘッダ: location に add_header を足すとこの server レベル分は継承されない（要再掲）。
+        # HSTS の 2 年 = Mozilla ガイドライン 6.0 の hsts_min_age（modern/intermediate 共通）。
+        #   includeSubDomains は付けない。証明書も vhost も ${DOMAIN} 単体で、サブドメインは
+        #   このホストが提供していないため、無関係な将来のサブドメインまで HTTPS を強制してしまう。
+        add_header Strict-Transport-Security "max-age=63072000"              always;
+        add_header X-Content-Type-Options    nosniff                         always;
+        # 自身を iframe に埋め込む用途が無いため SAMEORIGIN ではなく DENY（下の CSP frame-ancestors 'none' と同趣旨）。
+        add_header X-Frame-Options           DENY                            always;
+        add_header Referrer-Policy           strict-origin-when-cross-origin always;
+        # CSP: JS/CSS が全てインラインのため default-src は置かず（置けば 'unsafe-inline' が必要で無意味）、
+        #   'unsafe-inline' 無しで効く object-src/base-uri/form-action/frame-ancestors だけで実害を塞ぐ。
+        #   なお font/style を足す場合は fonts.googleapis.com と fonts.gstatic.com の許可が必須
+        #   （HTML が Google Fonts を読むため、漏らすと無言で sans-serif に落ちる）。
+        add_header Content-Security-Policy "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'" always;
 
         # ── / および /api/* はすべて Gunicorn へ ──────────────────────────
+        #   /api/today も分けない（healthcheck は proxy を経由せず app コンテナ内から直接叩くため）。
         location / {
             proxy_pass         http://flask_app;
 
-            proxy_set_header Host              $host;   # 既定の $proxy_host（= "flask_app"）を上書き
+            # burst=20 nodelay: レート超過分も burst=20 まではキューで遅延させず即処理し、それも超えれば 429。
+            #   共有 NAT/CGNAT 配下で実ユーザーが1つの IP に潰れたときの誤爆を防ぐための緩衝。
+            #   ※ I/O 待ちを伴う処理を足すと、即処理される burst 20 本が sync ワーカー 2 本に
+            #     滞留しうるため、その際は burst を見直すこと。
+            limit_req zone=api burst=20 nodelay;
+
+            # 既定の $proxy_host（= "flask_app"）を上書きする。:443 の server もこれ 1 つだけで任意の Host/SNI を
+            #   受理するため、クライアント由来の $host ではなく ${DOMAIN} に固定し、詐称 Host をアプリに渡さない。
+            proxy_set_header Host              ${DOMAIN};
 
             # クライアントが送った同名ヘッダは既定で素通しするため、必ず上書きして詐称を防ぐ。
             # X-Forwarded-For だけは上書きせず実 IP を末尾に追記するので、信頼できるのは末尾のみ。
@@ -98,9 +143,15 @@ http {
             proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto https;
 
-            proxy_connect_timeout 60s;
-            proxy_read_timeout    60s;
+            # ── 既定値に依存している設定（明示しないが、変えると黙って前提が崩れる）──
+            #   proxy_buffering（既定 on）: Gunicorn の短い timeout は「nginx が応答をバッファし、
+            #     遅いクライアントがワーカーを占有しない」前提に依存する。ストリーミング目的で
+            #     off にするとその前提が崩れる。
+            #   proxy_read_timeout（既定 60s）: Gunicorn 側は必ずこれより短く保ち、先に決着させる
+            #     （値は app/gunicorn.conf.py の timeout が正本）。
+            #   keepalive（upstream ブロック）/ proxy_http_version 1.1 / proxy_set_header Connection "":
+            #     nginx 1.29.7 で既定になったため 3 つとも省いている。それ未満へ下げると upstream 接続が
+            #     HTTP/1.0 + Connection: close に退行する（退行の詳細は proxy/Dockerfile 冒頭が正本）。
         }
-        # /api/today 専用 location は不要（healthcheck は proxy を経由せず app コンテナ内 localhost:8000 を叩くため）
     }
 }

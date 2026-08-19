@@ -1,25 +1,30 @@
 # ── コンテナログの上限 ──────────────────────────────────────────────────────
-#   json-file はデフォルト無制限で、放置するとホストのディスクを食い潰す。
-#   proxy・app とも全リクエストを stdout に出す。
-#   ※ 溢れた古いログは失われる（ホスト外へ転送していないため復元不可）。
+#   json-file はデフォルト無制限で、proxy と app が全リクエストを stdout に出すため、放置するとホストのディスクを食い潰す。
+#   ※ ローテーションで押し出された古いログは失われる（ホスト外へ転送していないため復元不可）。
 x-logging: &default-logging
   driver: json-file
   options:
     max-size: "10m"
     max-file: "3"
 
+# ── サービス横断の方針 ─────────────────────────────────────────────────────
+#   mem_limit（3 サービス全てに指定）— ブラスト半径の限定。1 サービスのリーク・暴走が、
+#     ホストや他サービスを巻き添えに OOM させるのを防ぐ。性能調整用ではない。
+#   security_opt: no-new-privileges（3 サービス全てに指定）— setuid 等による権限昇格を禁止する多層防御。
+#   image（app / proxy）— ホストではビルドせず GHCR の push 済みイメージを参照する（build: を置かない理由）。
+
 services:
 
   # ── Nginx リバースプロキシ（TLS 終端）─────────────────────────────────────
-  #   CI/CD からは docker compose pull で入れ替えるため、ホストでビルドせず
-  #   GHCR の push 済みイメージを参照する。PROXY_IMAGE / APP_IMAGE は deploy が .env に
-  #   不変の digest 固定参照（…@sha256:…）として書き出す。未設定なら起動を中止。
-  #   ※ nginx 設定はこのイメージに焼き込まれる（テンプレート proxy/nginx.conf.template）。
-  #     ドメイン名だけは起動時に環境変数 DOMAIN から envsubst で展開されるため、ここで渡す。
+  #   nginx 設定はこのイメージに焼き込まれる（テンプレート proxy/nginx.conf.template）。
   proxy:
     image: ${PROXY_IMAGE:?PROXY_IMAGE is required (set it in .env; deploy writes it by digest)}
     security_opt:
-      - no-new-privileges:true   # setuid 等による権限昇格を禁止（defense-in-depth）
+      - no-new-privileges:true
+    # app と違い cap_drop: ALL / read_only: true は付けていない（意図的な非対称）。
+    #   cap_drop: ALL 不可 — 80/443 の bind に CAP_NET_BIND_SERVICE が要る。
+    #   read_only 未適用   — envsubst が /etc/nginx/nginx.conf を、nginx 自身が /var/cache/nginx
+    #                        （proxy_temp 等）と /var/run/nginx.pid を書くため（app のような tmpfs 一枚では足りない）。
     environment:
       - TZ=Asia/Tokyo
       - DOMAIN=${DOMAIN:?DOMAIN is required (set it in .env; deploy writes it from the GitHub repo variable)}
@@ -30,18 +35,23 @@ services:
     volumes:
       - ./certbot/conf:/etc/letsencrypt:ro     # 取得した証明書の保存先（ホストに永続化）
       - ./certbot/www:/var/www/certbot:ro      # HTTP-01 チャレンジの webroot
+    # TLS 終端と転送のみでアプリのワークセットを持たない。応答バッファも大きければディスクへ退避されるため、常駐は接続数分に収まる。
+    mem_limit: 128m
+    # app が healthy になるまで proxy を起動せず、起動直後に 502 を返す窓をなくす。
     depends_on:
       app:
         condition: service_healthy
     restart: unless-stopped
     logging: *default-logging
-    # command 上書きで公式 entrypoint が envsubst をスキップするため 20-envsubst-on-templates.sh で nginx.conf を生成。
-    #   失敗時は || exit 1 で即停止する（放置すると同梱の stock nginx.conf で起動してしまうため）。
-    # 6時間ごとにリロードして証明書更新を反映しつつ、exec で nginx を PID 1 にして
-    # docker stop 時の STOPSIGNAL=SIGQUIT を直接受けて graceful shutdown させる。
+    # 20-envsubst-on-templates.sh — 公式 entrypoint が templating するのは起動コマンド先頭が
+    #   nginx/nginx-debug の時だけ。ここは /bin/sh 始まりで走らないため自前で叩く。
+    #   失敗時は || exit 1 で即停止（放置すると同梱の stock nginx.conf で起動してしまうため）。
+    # while ループ — 6h ごとの reload で更新後の証明書を反映する。サブシェルごと背景化しており、
+    #   docker stop のシグナルは下記 exec で PID 1 になる nginx が受けるため、cert のような trap は要らない。
+    # exec nginx — nginx を PID 1 にし、docker stop 時の STOPSIGNAL=SIGQUIT を直接受けて graceful shutdown させる。
     command: >
       /bin/sh -c "/docker-entrypoint.d/20-envsubst-on-templates.sh || exit 1;
-      (while :; do sleep 6h & wait $${!}; nginx -s reload; done) &
+      (while :; do sleep 6h; nginx -s reload; done) &
       exec nginx -g 'daemon off;'"
 
   # ── Flask + Gunicorn (DateCalc) ───────────────────────────────────────────
@@ -49,11 +59,28 @@ services:
     image: ${APP_IMAGE:?APP_IMAGE is required (set it in .env; deploy writes it by digest)}
     security_opt:
       - no-new-privileges:true
+    # 非 root・8000番待受のこのアプリは Linux ケーパビリティを一切使わない。全破棄して
+    #   侵害時の権限昇格・横展開（raw ソケットによる偵察/spoof 等）の手札を残さない。
+    cap_drop:
+      - ALL
+    # ルートFS を不変化し、侵害されてもコード改ざん・Web シェル設置・永続化を封じる。
+    #   アプリ自身は無書き込み。唯一 Gunicorn がワーカー死活監視の一時ファイルを /tmp
+    #   （既定の worker_tmp_dir）へ作るので、そこだけ揮発 tmpfs を割り当てる。
+    #   ※ read_only を tmpfs 無しで付けると一時ファイルを作れずワーカーが起動ループに陥る。両者は必ずセット。
+    read_only: true
+    tmpfs:
+      - /tmp
+    # ワーカー 2 本前提の値。WEB_CONCURRENCY を変えるならここも併せて見直すこと。
+    mem_limit: 256m
     environment:
+      # ログのタイムスタンプ用。日付計算は TZ 非依存（DateCalc.get_today() が JST 固定）。
       - TZ=Asia/Tokyo
-      - WEB_CONCURRENCY=2      # Gunicorn ワーカー数（コンテナ資源に合わせ調整）
+      # gunicorn.conf.py にも同じ既定があるが、デプロイ構成だけを見て並列数が分かるよう明示する。
+      - WEB_CONCURRENCY=2
+    # ports を書かないので外部には出ない（expose は「8000 で待受」の意図表明のみ）。接続元は proxy だけ。
     expose:
-      - "8000"           # 外部非公開・コンテナネットワーク内のみ（接続元は proxy）
+      - "8000"
+    # ヘルスチェック: app コンテナ内から localhost:8000 を直接叩く。
     healthcheck:
       test: ["CMD", "python", "-c",
              "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/today', timeout=5)"]
@@ -61,20 +88,29 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+      start_interval: 2s
     restart: unless-stopped
     logging: *default-logging
 
   # ── Certbot（Let's Encrypt 証明書の取得・自動更新）───────────────────────
   cert:
+    # cert は CI のビルド対象外（deploy が .env に digest を書くのは APP_IMAGE/PROXY_IMAGE だけ）。
+    #   タグ無指定＝latest 追従を許容するのは、版ずれの影響が証明書更新に閉じてリクエスト処理経路に
+    #   及ばず、再現性より ACME 上流の修正（プロトコル変更・脆弱性対応）への自動追従が得なため。
     image: certbot/certbot
     security_opt:
       - no-new-privileges:true
     environment:
       - TZ=Asia/Tokyo
+    # 更新の失敗は証明書失効まで顕在化しないため、OOM kill を避けて余裕側に倒した概算値。
+    mem_limit: 256m
     volumes:
       - ./certbot/conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
-    # 12 時間ごとに更新を試行（期限が近いものだけ実際に更新される）
+    # 起動直後と以降 12 時間ごとに更新を試行（期限が近いものだけ実際に更新される）。
+    #   trap exit TERM で docker stop に即応する。sh は前景コマンドの終了まで trap を実行しないため、
+    #   前景 sleep だと最大 12 時間反応できない。background + wait なら SIGTERM で wait が中断され trap が走る。
+    #   ※ $${!} の $$ は compose の変数展開を抑止するエスケープ（シェルには直前の sleep の PID が渡る）。
     entrypoint: >
       /bin/sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done"
     restart: unless-stopped
