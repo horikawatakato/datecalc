@@ -61,6 +61,7 @@ datecalc/
 │   └── nginx.conf.template         # リバースプロキシ設定（TLS終端）
 │
 ├── scripts/
+│   └── bootstrap-https.sh          # HTTPS初回セットアップスクリプト
 │
 ├── .gitattributes                  # 改行コード設定（LF固定）
 ├── .gitignore                      # Git管理除外設定

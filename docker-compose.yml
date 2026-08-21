@@ -31,6 +31,7 @@ services:
     ports:
       - "80:80"     # HTTP（ACME チャレンジ + HTTPS へのリダイレクト用）
       - "443:443"   # HTTPS
+    # 書き込むのは cert サービスとホスト側（bootstrap-https.sh）だけ。proxy は読むだけなので :ro。
     volumes:
       - ./certbot/conf:/etc/letsencrypt:ro     # 取得した証明書の保存先（ホストに永続化）
       - ./certbot/www:/var/www/certbot:ro      # HTTP-01 チャレンジの webroot
@@ -92,6 +93,8 @@ services:
     logging: *default-logging
 
   # ── Certbot（Let's Encrypt 証明書の取得・自動更新）───────────────────────
+  #   ※ このサービスは renew（更新）専用。初回証明書はホストで scripts/bootstrap-https.sh を
+  #     一度手動実行して取得済みである前提（証明書が無い状態では certbot renew は何もしない）。
   cert:
     # cert は CI のビルド対象外（deploy が .env に digest を書くのは APP_IMAGE/PROXY_IMAGE だけ）。
     #   タグ無指定＝latest 追従を許容するのは、版ずれの影響が証明書更新に閉じてリクエスト処理経路に
