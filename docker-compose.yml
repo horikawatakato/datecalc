@@ -31,7 +31,6 @@ services:
     ports:
       - "80:80"     # HTTP（ACME チャレンジ + HTTPS へのリダイレクト用）
       - "443:443"   # HTTPS
-    # 書き込むのは cert サービスとホスト側（init-letsencrypt.sh）だけ。proxy は読むだけなので :ro
     volumes:
       - ./certbot/conf:/etc/letsencrypt:ro     # 取得した証明書の保存先（ホストに永続化）
       - ./certbot/www:/var/www/certbot:ro      # HTTP-01 チャレンジの webroot

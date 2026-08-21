@@ -235,10 +235,8 @@ jobs:
   #    前提（初回のみ手動）:
   #      - EC2 で SSM エージェント稼働＋インスタンスロールに AmazonSSMManagedInstanceCore
   #        （CloudWatch 全文ログ用に logs:CreateLogGroup / CreateLogStream / PutLogEvents も）
-  #      - ホストの ${APP_DIR}（例 /opt/app）に init-letsencrypt.sh 配置済み
   #        （docker-compose.yml は毎回本ワークフローが配布。app/proxy のソースは不要＝GHCR から pull）
   #      - private イメージなら GHCR 認証済み（docker login）。または public にしておく
-  #      - 初回の証明書取得（./init-letsencrypt.sh）完了済み
   #
   #    OIDC ロール(secrets.AWS_ROLE_ARN)の必要権限:
   #      ssm:SendCommand / ssm:GetCommandInvocation（対象インスタンスと AWS-RunShellScript に対して）
