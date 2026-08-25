@@ -13,7 +13,7 @@ on:
       - 'docs/**'
   workflow_dispatch:   # 手動トリガー
 
-# ── 同時実行制御の方針（設定値は各ジョブの concurrency を参照）───────────────
+# ── 同時実行制御の方針（設定値は各ジョブの concurrency を参照）────────────────────────────────────
 #    test / build : GHCR や本番へ影響を残さないので、後発ランが来たら中断してよい。
 #    push / deploy: 中断すると GHCR や本番ホストが中途半端な状態で残るため、走行中は
 #                   キャンセルせず直列化する（順序は保証されない ＝ deploy の staleness 判定で補正）。
@@ -24,7 +24,7 @@ env:
   PROXY_IMAGE_NAME: ${{ github.repository_owner }}/proxy
 
 jobs:
-  # ── テストジョブ ────────────────────────────────────────────────────────────
+  # ── テストジョブ ─────────────────────────────────────────────────────────────────────────────
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -60,7 +60,7 @@ jobs:
         working-directory: ./app
         run: pytest --tb=short -v --cov=DateCalc --cov=DateCalc_server --cov-report=term-missing --cov-fail-under=100
 
-  # ── ビルドジョブ ────────────────────────────────────────────────────────────
+  # ── ビルドジョブ ─────────────────────────────────────────────────────────────────────────────
   #    app・proxy を常にビルドして tar 出力し、push 用に artifact 保存
   #    （main 以外は push ジョブが動かないためアップロードをスキップ）。
   build:
@@ -148,7 +148,7 @@ jobs:
           path: /tmp/proxy.tar
           retention-days: 1
 
-  # ── プッシュジョブ ──────────────────────────────────────────────────────────
+  # ── プッシュジョブ ───────────────────────────────────────────────────────────────────────────
   #    build の artifact を取得し、app → proxy の順で GHCR へ Push。
   #    main 以外（PR / 他ブランチの手動実行）ではスキップし、GHCR を汚さない。
   push:
@@ -229,7 +229,7 @@ jobs:
           fi
           echo "image=$image" >> "$GITHUB_OUTPUT"
 
-  # ── デプロイジョブ（EC2 へ SSM 経由でデプロイ）────────────────────────
+  # ── デプロイジョブ（EC2 へ SSM 経由でデプロイ）─────────────────────────────────────────────────
   #    稼働中 EC2 の docker-compose をイメージ差し替えで更新する。
   #
   #    前提（初回のみ手動）:
@@ -256,7 +256,7 @@ jobs:
       id-token: write  # OIDC 認証に必要
 
     steps:
-      # ── 必須の変数・シークレット検証（未設定なら明確に失敗）───────────────
+      # ── 必須の変数・シークレット検証（未設定なら明確に失敗）──────────────────────────────────────
       #   AWS_REGION / AWS_ROLE_ARN は直後の認証で使うため先に検証する。
       - name: Validate required repository variables and secrets
         env:
@@ -272,33 +272,34 @@ jobs:
           for v in APP_DIR AWS_REGION DOMAIN EC2_INSTANCE_ID; do
             # 値は出力せず空判定のみ（変数・シークレットとも値をログに出さない方針）。
             if [ -z "${!v}" ]; then
-              echo "::error::リポジトリ変数 $v が未設定です（Settings → Secrets and variables → Actions → Variables）。" >&2
+              echo "::error::リポジトリ変数 $v が未設定です（Settings → Secrets and variables → Actions → Variables）" >&2
               missing=1
             fi
           done
           if [ -z "${AWS_ROLE_ARN}" ]; then
-            echo "::error::リポジトリシークレット AWS_ROLE_ARN が未設定です（Settings → Secrets and variables → Actions → Secrets）。" >&2
+            echo "::error::リポジトリシークレット AWS_ROLE_ARN が未設定です（Settings → Secrets and variables → Actions → Secrets）" >&2
             missing=1
           fi
           if [ "$missing" -ne 0 ]; then
             exit 1
           fi
 
-      # ── AWS 認証（OIDC）────────────────────────────────────────────────
+      # ── AWS 認証（OIDC）──────────────────────────────────────────────────────────────────────
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
           aws-region: ${{ vars.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
 
-      # ── リポジトリを取得 ──────────────────────────────────────────────────
+      # ── リポジトリを取得 ──────────────────────────────────────────────────────────────────────
       #    docker-compose.yml のホスト配布と、次ステップの git ls-remote の両方に必要。
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      # ── stale デプロイの抑止（実行順が不定な理由は冒頭の同時実行制御を参照）──────
-      #    ブランチ先端が本ランの SHA より新しければデプロイをスキップし、古い digest での
-      #    上書きを防ぐ（後発ランが最新を反映。Deploy / Summary をこの出力でゲート）。
+      # ── stale デプロイの抑止 ──────────────────────────────────────────────────────────────────
+      #    deploy は直列化されるが実行順は保証されず、先発ランの deploy が後発より後に走ると
+      #    古い digest で上書きされる。本ランの SHA がブランチ先端でなければデプロイをスキップし、
+      #    後発ランが deploy まで到達した場合に限り最新を反映する。
       - name: Skip if a newer commit exists on the branch
         id: staleness
         env:
@@ -309,18 +310,18 @@ jobs:
           # ls-remote 失敗時も set -e で止めず空扱いにし、下の -z 判定（安全側で続行）へ委ねる。
           latest=$(git ls-remote origin "refs/heads/${BRANCH}" | cut -f1) || latest=""
           if [ -z "$latest" ]; then
-            echo "::warning::${BRANCH} の最新 SHA を取得できませんでした。安全側でデプロイを続行します。" >&2
+            echo "::warning::${BRANCH} の最新 SHA を取得できなかったため、安全側でデプロイを続行します" >&2
             echo "is_latest=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           if [ "$latest" != "$GITHUB_SHA" ]; then
-            echo "::notice::${BRANCH} の最新は ${latest}。本ラン(${GITHUB_SHA})はより古いためデプロイをスキップします（後発ランが最新を反映）。"
+            echo "::notice::本ラン(${GITHUB_SHA:0:7})は ${BRANCH} の最新(${latest:0:7})ではないため、デプロイをスキップして以降のランに委ねます"
             echo "is_latest=false" >> "$GITHUB_OUTPUT"
           else
             echo "is_latest=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # ── SSM Run Command で EC2 の compose を digest 固定で入れ替え ─────────
+      # ── SSM Run Command で EC2 の compose を digest 固定で入れ替え ────────────────────────────
       #      push が出力した digest 固定参照（…@sha256:...）で app/proxy を固定＝タグ上書きに
       #      左右されず成果物そのものをデプロイ。docker-compose.yml も base64 で送りホストへ書き出す。
       - name: Deploy to EC2 via SSM
@@ -383,12 +384,17 @@ jobs:
           # ※ 初回は .bak が無くロールバック先が無いため、壊れた新構成を down してから
           #    非0終了する（初回のみ手動復旧が前提）。
           if [ "$deploy_ok" != 1 ]; then
-            echo "デプロイ検証に失敗。直前の構成への復旧を試みます。" >&2
+            echo "デプロイに失敗したため、直前の構成への復旧を試みます" >&2
             if [ -f docker-compose.yml.bak ]; then mv -f docker-compose.yml.bak docker-compose.yml; fi
             rolled_back=0
             if [ -f .env.bak ]; then
               mv -f .env.bak .env
-              docker compose up -d || true
+              # 成否を残す（|| true だと復旧できたか判別できない）。set -e の即中断は if で回避。
+              if docker compose up -d; then
+                echo "直前の構成へ復旧しました" >&2
+              else
+                echo "直前の構成への復旧に失敗しました（手動復旧が必要）" >&2
+              fi
               rolled_back=1
             fi
             if [ "$rolled_back" = 1 ]; then
@@ -401,7 +407,7 @@ jobs:
               [ "$old_proxy" != "$PROXY_IMAGE" ] && docker image rm -f "$PROXY_IMAGE" >/dev/null 2>&1 || true
             else
               # ロールバック先が無い（初回等）。起動済みなら壊れた新構成を停止（未起動でも down は無害）。
-              echo "ロールバック先が無いため、新構成を停止します（手動復旧が必要）。" >&2
+              echo "ロールバック先が無いため、新構成を停止します（手動復旧が必要）" >&2
               docker compose down || true
             fi
             exit 1
@@ -469,7 +475,15 @@ jobs:
             --query StandardOutputContent --output text || true
 
           if [ "${STATUS}" != "Success" ]; then
-            echo "::error::デプロイに失敗しました (Status=${STATUS})" >&2
+            # 非終端（Pending/InProgress）で抜けるのは EC2 停止・SSM 不達・API 継続失敗の場合で、
+            # 実行して失敗したのではなく結果が不明。失敗と断定せず区別して出す。
+            case "${STATUS}" in
+              Failed|Cancelled|TimedOut)
+                echo "::error::デプロイに失敗しました (Status=${STATUS})" >&2 ;;
+              *)
+                echo "::error::デプロイの結果を確認できませんでした (Status=${STATUS})" >&2
+                echo "result=unknown" >> "$GITHUB_OUTPUT" ;;
+            esac
             echo "----- リモート標準エラー -----"
             aws ssm get-command-invocation \
               --command-id "${CMD_ID}" --instance-id "${INSTANCE_ID}" \
@@ -480,7 +494,7 @@ jobs:
           echo "  app:   ${APP_IMAGE}"
           echo "  proxy: ${PROXY_IMAGE}"
 
-      # ── デプロイ結果をサマリーに出力 ──────────────────────────────────────
+      # ── デプロイ結果をサマリーに出力 ───────────────────────────────────────────────────────────
       - name: Summary
         # is_latest=true（本ランが最新でデプロイを試行した）ときだけ出す。
         #   - stale スキップ（is_latest=false）: 「デプロイ済み」と誤表示しないよう出さない。
@@ -489,20 +503,25 @@ jobs:
         if: always() && steps.staleness.outputs.is_latest == 'true'
         env:
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          DEPLOY_RESULT:  ${{ steps.deploy.outputs.result }}
           FINISHED_AT:    ${{ steps.deploy.outputs.finished_at }}
           APP_IMAGE:      ${{ needs.push.outputs.app_image }}
           PROXY_IMAGE:    ${{ needs.push.outputs.proxy_image }}
         run: |
           case "$DEPLOY_OUTCOME" in
-            success) RESULT="✅ 成功" ;;
-            failure) RESULT="❌ 失敗" ;;
-            *)       RESULT="⚠️ $DEPLOY_OUTCOME" ;;
+            success)   RESULT="✅ 成功" ;;
+            failure)   RESULT="❌ 失敗" ;;
+            cancelled) RESULT="⚠️ 中断" ;;
+            skipped)   RESULT="⚠️ 未実行" ;;
+            *)         RESULT="⚠️ $DEPLOY_OUTCOME" ;;
           esac
+          # 非終端で終わった場合は失敗と断定できないため上書きする
+          if [ "${DEPLOY_RESULT:-}" = unknown ]; then RESULT="⚠️ 不明"; fi
           # 出力は「ラベル<br>値」を空行区切り。GFM は単一改行を空白に畳むため <br> で改行する。
           {
             echo "**デプロイ結果**<br>${RESULT}"
             echo ""
-            echo "**完了時刻**<br>${FINISHED_AT}"
+            echo "**終了時刻**<br>${FINISHED_AT}"
             echo ""
             echo "**App**<br>${APP_IMAGE}"
             echo ""

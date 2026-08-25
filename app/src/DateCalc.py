@@ -113,7 +113,7 @@ def describe_diff(diff: int, target: DateParts, today: DateParts) -> str:
     # 過去・未来どちらでも「古い側(from) → 新しい側(to)」に並べ替えてから年数を数える
     from_p, to_p = (today, target) if diff > 0 else (target, today)
 
-    # 年差の補正は高々1回で足りる（理由↓）。
+    # 年差の補正は高々1回で足りる。
     # まず単純な年差を仮に置き、記念日が新しい側を追い越していたら1年戻す。
     # from≤to かつ years=年差なので anniversary(years) は to と同一暦年に入り、
     # 追い越していても anniversary(years-1) は前年=確実に to 以前になるため。
