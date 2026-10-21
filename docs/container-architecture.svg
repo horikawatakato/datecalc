@@ -40,7 +40,7 @@
 
 <rect x="209" y="186" width="262" height="42" rx="6" fill="#ffffff" stroke="#1F2328" stroke-width="1.6"/>
 <text class="th" x="225" y="203" fill="#1F2328">Nginx（nginx.conf）</text>
-<text class="ts" x="225" y="219" fill="#1F2328">リクエストを受信してappコンテナへ送信</text>
+<text class="ts" x="225" y="219" fill="#1F2328">リクエストを受信してappコンテナへ転送</text>
 
 <rect x="209" y="324" width="262" height="42" rx="6" fill="#ffffff" stroke="#1F2328" stroke-width="1.6"/>
 <text class="th" x="225" y="341" fill="#1F2328">Gunicorn（wsgi.py）</text>
@@ -48,11 +48,11 @@
 
 <rect x="209" y="404" width="262" height="42" rx="6" fill="#ffffff" stroke="#1F2328" stroke-width="1.6"/>
 <text class="th" x="225" y="421" fill="#1F2328">Flask（DateCalc_server.py）</text>
-<text class="ts" x="225" y="437" fill="#1F2328">リクエストを計算ロジックへ送信</text>
+<text class="ts" x="225" y="437" fill="#1F2328">計算ロジックを呼び出し</text>
 
 <rect x="209" y="484" width="262" height="42" rx="6" fill="#ffffff" stroke="#1F2328" stroke-width="1.6"/>
 <text class="th" x="225" y="501" fill="#1F2328">計算ロジック（DateCalc.py）</text>
-<text class="ts" x="225" y="517" fill="#1F2328">日付の差分を計算して結果を応答</text>
+<text class="ts" x="225" y="517" fill="#1F2328">日付の差分を計算して結果を返却</text>
 
 <rect x="209" y="612" width="262" height="42" rx="6" fill="#ffffff" stroke="#1F2328" stroke-width="1.6"/>
 <text class="th" x="225" y="629" fill="#1F2328">ブラウザ（DateCalc.html）</text>

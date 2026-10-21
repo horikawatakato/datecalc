@@ -19,7 +19,7 @@
 
 ## 主な使用技術
 
-- AWS EC2でNginxをリバースプロキシかつTLS終端に使用したコンテナ構成を構築
+- AWS EC2でNginxをリバースプロキシかつTLS終端として使用したコンテナ構成を構築
 - GitHub Actionsでテスト→ビルド→プッシュ→デプロイを自動化したCI/CDパイプラインを構築
 
 <br>
@@ -37,17 +37,17 @@ datecalc/
 ├── app/
 │   ├── src/
 │   │   ├── DateCalc.py             # 計算ロジック
-│   │   ├── DateCalc_server.py      # flask webサーバー（API・HTML配信）
-│   │   └── wsgi.py                 # gunicornエントリポイント
+│   │   ├── DateCalc_server.py      # Flask Webサーバー（API・HTML配信）
+│   │   └── wsgi.py                 # Gunicornエントリポイント
 │   ├── static/
-│   │   └── DateCalc.html           # webフロントエンド
+│   │   └── DateCalc.html           # Webフロントエンド
 │   ├── tests/
 │   │   ├── test_DateCalc.py        # ユニットテスト（計算ロジック）
-│   │   └── test_DateCalc_server.py # ユニットテスト（webサーバー）
+│   │   └── test_DateCalc_server.py # ユニットテスト（Webサーバー）
 │   │
 │   ├── .dockerignore               # Dockerビルド除外設定
 │   ├── Dockerfile                  # appコンテナイメージ用
-│   ├── gunicorn.conf.py            # gunicorn設定
+│   ├── gunicorn.conf.py            # Gunicorn設定
 │   ├── pytest.ini                  # pytest設定
 │   ├── requirements-dev.txt        # 開発用依存パッケージ（pytest・pytest-cov）
 │   └── requirements.txt            # 依存パッケージ（flask・gunicorn）
@@ -81,8 +81,8 @@ datecalc/
 | コンテナ | 役割 |
 |---|---|
 | **proxy** | ・リバースプロキシかつTLS終端<br>・443ポート：HTTPSを復号してappコンテナへ転送<br>・80ポート：ACMEチャレンジの受付とHTTPSへのリダイレクト<br>・6時間ごとに自動リロードして更新後の証明書を反映 |
-| **app** | ・アプリ本体（Gunicorn + Flask + 計算ロジックDateCalc.py）<br>・8000ポート：外部には非公開でproxyコンテナからのみアクセス可能 |
-| **cert** | ・12時間ごとに証明書の更新を試行<br>・有効期限が残り30日以下の証明書のみ実際に更新（初回発行は対象外） |
+| **app** | ・アプリ本体（Gunicorn + Flask + 計算ロジックDateCalc.py）<br>・8000ポート：外部からはproxyコンテナ経由でのみアクセス可能 |
+| **cert** | ・12時間ごとに証明書の更新を試行<br>・有効期限が残り30日以下（Certbotの既定値）の証明書のみ実際に更新（初回発行は対象外） |
 
 <br>
 
