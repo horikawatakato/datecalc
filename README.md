@@ -7,7 +7,7 @@
 
 ---
 
-## 主な機能
+## 機能
 
 - 現在の日付と入力日付の差分を日数で表示（365日以上は年数も併記）
 - 紀元前999年〜西暦9999年に対応（紀元前の年は負数で入力）
@@ -17,16 +17,71 @@
 
 ---
 
-## 主な使用技術
+## 構築内容
 
-- AWS EC2でNginxをリバースプロキシかつTLS終端に使用したコンテナ構成を構築
+- AWS EC2でNginxをリバースプロキシかつTLS終端として使用したコンテナ構成を構築
 - GitHub Actionsでテスト→ビルド→プッシュ→デプロイを自動化したCI/CDパイプラインを構築
+- デプロイ後のスモークテストと失敗時の自動ロールバックを実装
+
+<br>
+
+---
+
+## 使用技術
+
+<br>
+
+| 分類 | 技術 |
+|---|---|
+| AWS | EC2、Systems Manager、IAM（OIDC連携）、CloudWatch Logs |
+| インフラ | Docker、Docker Compose、Nginx、Let's Encrypt（Certbot） |
+| CI/CD | GitHub Actions、GHCR（GitHub Container Registry） |
+| アプリ | Python 3.12、Flask、Gunicorn、pytest、HTML/JavaScript |
+
+<br>
+
+---
+
+## コンテナ構成
+
+<br>
+
+| コンテナ | 役割 |
+|---|---|
+| **proxy** | ・リバースプロキシかつTLS終端<br>・443ポート：HTTPSを復号してappコンテナへ転送<br>・80ポート：ACMEチャレンジの受付とHTTPSへのリダイレクト<br>・6時間ごとに自動リロードして更新後の証明書を反映 |
+| **app** | ・アプリ本体（Gunicorn + Flask + 計算ロジック）<br>・8000ポート：外部からはproxyコンテナ経由でのみアクセス可能 |
+| **cert** | ・12時間ごとに証明書の更新を試行<br>・有効期限が残り30日以下（Certbotの既定値）の証明書のみ実際に更新（初回発行は対象外） |
+
+<br>
+
+**ACMEチャレンジ**  
+Let's Encryptが証明書を発行・更新する前に行う「あなたが本当にそのドメインを管理・操作できる立場にあるか」の確認
+
+<br>
+
+<p align="center">
+  <img src="docs/container-architecture.svg" alt="コンテナ構成図" width="700">
+</p>
+
+<br>
+
+---
+
+## CI/CDパイプライン
+
+<br>
+
+<p align="center">
+  <img src="docs/cicd-pipeline.svg" alt="CI/CDパイプライン図" width="700">
+</p>
 
 <br>
 
 ---
 
 ## ファイル構成
+
+<br>
 
 ```
 datecalc/
@@ -37,23 +92,23 @@ datecalc/
 ├── app/
 │   ├── src/
 │   │   ├── DateCalc.py             # 計算ロジック
-│   │   ├── DateCalc_server.py      # flask webサーバー（API・HTML配信）
-│   │   └── wsgi.py                 # gunicornエントリポイント
+│   │   ├── DateCalc_server.py      # Flask Webサーバー（API・HTML配信）
+│   │   └── wsgi.py                 # Gunicornエントリポイント
 │   ├── static/
-│   │   └── DateCalc.html           # webフロントエンド
+│   │   └── DateCalc.html           # Webフロントエンド
 │   ├── tests/
 │   │   ├── test_DateCalc.py        # ユニットテスト（計算ロジック）
-│   │   └── test_DateCalc_server.py # ユニットテスト（webサーバー）
+│   │   └── test_DateCalc_server.py # ユニットテスト（Webサーバー）
 │   │
 │   ├── .dockerignore               # Dockerビルド除外設定
 │   ├── Dockerfile                  # appコンテナイメージ用
-│   ├── gunicorn.conf.py            # gunicorn設定
+│   ├── gunicorn.conf.py            # Gunicorn設定
 │   ├── pytest.ini                  # pytest設定
 │   ├── requirements-dev.txt        # 開発用依存パッケージ（pytest・pytest-cov）
 │   └── requirements.txt            # 依存パッケージ（flask・gunicorn）
 │
 ├── docs/
-│   ├── cicd-workflow.svg           # CI/CDワークフロー図
+│   ├── cicd-pipeline.svg           # CI/CDパイプライン図
 │   └── container-architecture.svg  # コンテナ構成図
 │
 ├── proxy/
@@ -69,39 +124,6 @@ datecalc/
 ├── LICENSE                         # MITライセンス
 └── README.md                       # プロジェクト説明
 ```
-
-<br>
-
----
-
-## コンテナ構成
-
-<br>
-
-| コンテナ | 役割 |
-|---|---|
-| **proxy** | ・リバースプロキシかつTLS終端<br>・443ポート：HTTPSを復号してappコンテナへ転送<br>・80ポート：ACMEチャレンジの受付とHTTPSへのリダイレクト<br>・6時間ごとに自動リロードして更新後の証明書を反映 |
-| **app** | ・アプリ本体（Gunicorn + Flask + 計算ロジックDateCalc.py）<br>・8000ポート：外部には非公開でproxyコンテナからのみアクセス可能 |
-| **cert** | ・12時間ごとに証明書の更新を試行<br>・有効期限が残り30日以下の証明書のみ実際に更新（初回発行は対象外） |
-
-<br>
-
-**ACMEチャレンジ**  
-Let's Encryptが証明書を発行・更新する前に行う「あなたが本当にそのドメインを管理・操作できる立場にあるか」の確認
-
-<br>
-
-<img src="docs/container-architecture.svg" alt="コンテナ構成図" width="100%">
-
-<br>
-
----
-
-## GitHub Actions（CI/CD）
-
-<br>
-
-<img src="docs/cicd-workflow.svg" alt="CI/CDワークフロー図" width="100%">
 
 <br>
 <br>
