@@ -425,7 +425,8 @@ jobs:
           fi
 
           rm -f .env.bak docker-compose.yml.bak
-          docker image prune -f
+          # 合計の1行のみ出力（prune の失敗は pipefail で検知）。
+          docker image prune -f | tail -n 1
           EOF
           } > remote.sh
 
