@@ -13,14 +13,19 @@ on:
       - 'docs/**'
   workflow_dispatch:   # 手動トリガー
 
+# 既定は権限なし。各ジョブで必要な権限だけを付与する。
+permissions: {}
+
 # ── 同時実行制御の方針（設定値は各ジョブの concurrency を参照）────────────────────────────────────
-#    test / build : GHCR や本番へ影響を残さないので、後発ランが来たら中断してよい。
-#    push / deploy: 中断すると GHCR や本番ホストが中途半端な状態で残るため、走行中は
-#                   キャンセルせず直列化する（順序は保証されない ＝ deploy の staleness 判定で補正）。
+#    test / build : GHCR や本番へ影響を残さないため、後発ランが来たら中断してよい。
+#    push / deploy: 中断すると GHCR や本番ホストが中途半端な状態で残るため、
+#                   走行中はキャンセルせず直列化する。ただし実行順は保証されない。
+#                     push  : latest / main タグは先発ランのイメージで上書きされ得る。
+#                     deploy: staleness 判定で最新コミットの digest のみ反映する。
 
 env:
-  REGISTRY: ghcr.io
-  APP_IMAGE_NAME: ${{ github.repository_owner }}/app
+  REGISTRY:         ghcr.io
+  APP_IMAGE_NAME:   ${{ github.repository_owner }}/app
   PROXY_IMAGE_NAME: ${{ github.repository_owner }}/proxy
 
 jobs:
@@ -37,14 +42,14 @@ jobs:
       id-token: none
 
     steps:
-      - name: Checkout repository
+      - name: Check out repository
         uses: actions/checkout@v6
 
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: '3.12'   # app/Dockerfile の python:3.12-slim に合わせる
-          cache: 'pip'
+          cache: pip
           cache-dependency-path: |
             app/requirements.txt
             app/requirements-dev.txt
@@ -56,12 +61,12 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      - name: Run tests
+      - name: Run tests with coverage
         working-directory: ./app
         run: pytest --tb=short -v --cov=DateCalc --cov=DateCalc_server --cov-report=term-missing --cov-fail-under=100
 
   # ── ビルドジョブ ─────────────────────────────────────────────────────────────────────────────
-  #    app・proxy を常にビルドして tar 出力し、push 用に artifact 保存
+  #    app / proxy を常にビルドして tar 出力し、push 用に artifact 保存
   #    （main 以外は push ジョブが動かないためアップロードをスキップ）。
   build:
     runs-on: ubuntu-latest
@@ -76,11 +81,11 @@ jobs:
       id-token: none
 
     outputs:
-      app_tags:    ${{ steps.meta-app.outputs.tags }}
-      proxy_tags:  ${{ steps.meta-proxy.outputs.tags }}
+      app_tags:   ${{ steps.meta-app.outputs.tags }}
+      proxy_tags: ${{ steps.meta-proxy.outputs.tags }}
 
     steps:
-      - name: Checkout repository
+      - name: Check out repository
         uses: actions/checkout@v6
 
       - name: Extract metadata for app image
@@ -108,7 +113,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Build app image
+      - name: Build and export app image
         uses: docker/build-push-action@v7
         with:
           context: ./app
@@ -120,7 +125,7 @@ jobs:
           cache-from: type=gha,scope=app
           cache-to: type=gha,mode=max,scope=app
 
-      - name: Build proxy image
+      - name: Build and export proxy image
         uses: docker/build-push-action@v7
         with:
           context: ./proxy
@@ -149,8 +154,8 @@ jobs:
           retention-days: 1
 
   # ── プッシュジョブ ───────────────────────────────────────────────────────────────────────────
-  #    build の artifact を取得し、app → proxy の順で GHCR へ Push。
-  #    main 以外（PR / 他ブランチの手動実行）ではスキップし、GHCR を汚さない。
+  #    build の artifact を取得し、app → proxy の順で GHCR へ push。
+  #    main 以外（PR / 他ブランチの手動実行）ではスキップし、GHCR には main のイメージだけを登録する。
   push:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -165,12 +170,12 @@ jobs:
       id-token: none
 
     outputs:
-      # deploy / Summary へ、実際に push した不変の digest 固定参照（…@sha256:…）を引き渡す
+      # deploy ジョブ（デプロイとサマリー出力）へ、実際に push した不変の digest 固定参照（…@sha256:…）を引き渡す。
       app_image:   ${{ steps.push-app.outputs.image }}
       proxy_image: ${{ steps.push-proxy.outputs.image }}
 
     steps:
-      - name: Login to GHCR
+      - name: Log in to GHCR
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
@@ -183,7 +188,7 @@ jobs:
           name: app-image
           path: /tmp
 
-      - name: Push app image
+      - name: Load and push app image
         id: push-app
         env:
           APP_TAGS: ${{ needs.build.outputs.app_tags }}
@@ -197,11 +202,12 @@ jobs:
           # push 済みタグから digest 固定参照（<registry>/<name>@sha256:…）を取得して出力。
           # 実際に push された名前がそのまま入る（metadata-action が小文字化済み）ため、
           # deploy 側で名前を組み立て直さずに済む。
-          # inspect 失敗で set -e が即中断しないよう || true で空にし、下の -z 判定へ委ねる。
+          # inspect 失敗で set -e の即中断を避けるため || true で空にし、下の -z 判定へ委ねる。
           first_tag=${APP_TAGS%%$'\n'*}
-          image=$(docker inspect --format='{{index .RepoDigests 0}}' "$first_tag" 2>/dev/null || true)
+          image=$(docker image inspect --format '{{index .RepoDigests 0}}' "$first_tag" || true)
           if [ -z "$image" ]; then
-            echo "::error::app イメージの digest 固定参照を取得できませんでした" >&2; exit 1
+            echo "::error::appイメージのdigest固定参照を取得できませんでした" >&2
+            exit 1
           fi
           echo "image=$image" >> "$GITHUB_OUTPUT"
 
@@ -211,7 +217,7 @@ jobs:
           name: proxy-image
           path: /tmp
 
-      - name: Push proxy image
+      - name: Load and push proxy image
         id: push-proxy
         env:
           PROXY_TAGS: ${{ needs.build.outputs.proxy_tags }}
@@ -223,25 +229,29 @@ jobs:
             docker push "$tag"
           done <<< "$PROXY_TAGS"
           first_tag=${PROXY_TAGS%%$'\n'*}
-          image=$(docker inspect --format='{{index .RepoDigests 0}}' "$first_tag" 2>/dev/null || true)
+          image=$(docker image inspect --format '{{index .RepoDigests 0}}' "$first_tag" || true)
           if [ -z "$image" ]; then
-            echo "::error::proxy イメージの digest 固定参照を取得できませんでした" >&2; exit 1
+            echo "::error::proxyイメージのdigest固定参照を取得できませんでした" >&2
+            exit 1
           fi
           echo "image=$image" >> "$GITHUB_OUTPUT"
 
   # ── デプロイジョブ（EC2 へ SSM 経由でデプロイ）─────────────────────────────────────────────────
-  #    稼働中 EC2 の docker-compose をイメージ差し替えで更新する。
+  #    稼働中 EC2 の compose をイメージ差し替えで更新する。
+  #    main 以外（PR / 他ブランチの手動実行）ではスキップし、本番には main の変更だけを反映する。
   #
   #    前提（初回のみ手動）:
   #      - EC2 で SSM エージェント稼働＋インスタンスロールに AmazonSSMManagedInstanceCore
-  #        （CloudWatch 全文ログ用に logs:CreateLogGroup / CreateLogStream / PutLogEvents も）
-  #      - ホストの ${APP_DIR}（例 /opt/app）に bootstrap-https.sh 配置済み
-  #        （docker-compose.yml は毎回本ワークフローが配布。app/proxy のソースは不要＝GHCR から pull）
+  #        CloudWatch 全文ログの必要権限:
+  #          logs:DescribeLogGroups / CreateLogGroup / DescribeLogStreams / CreateLogStream / PutLogEvents
+  #      - ホストの vars.APP_DIR（例 /opt/app）に bootstrap-https.sh 配置済み
+  #        （docker-compose.yml は毎回本ワークフローが配布。app / proxy のソースは不要＝GHCR から pull）
   #      - private イメージなら GHCR 認証済み（docker login）。または public にしておく
   #      - 初回の証明書取得（./bootstrap-https.sh）完了済み
   #
-  #    OIDC ロール(secrets.AWS_ROLE_ARN)の必要権限:
-  #      ssm:SendCommand / ssm:GetCommandInvocation（対象インスタンスと AWS-RunShellScript に対して）
+  #    OIDC ロール（secrets.AWS_ROLE_ARN）の必要権限:
+  #      ssm:SendCommand（対象インスタンスと AWS-RunShellScript に対して）
+  #      ssm:GetCommandInvocation（リソースを指定できないため * に対して）
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -253,11 +263,11 @@ jobs:
     permissions:
       contents: read
       packages: none
-      id-token: write  # OIDC 認証に必要
+      id-token: write   # OIDC 認証に必要
 
     steps:
       # ── 必須の変数・シークレット検証（未設定なら明確に失敗）──────────────────────────────────────
-      #   AWS_REGION / AWS_ROLE_ARN は直後の認証で使うため先に検証する。
+      #    AWS_REGION / AWS_ROLE_ARN は直後の認証で使うため先に検証する。
       - name: Validate required repository variables and secrets
         env:
           APP_DIR:         ${{ vars.APP_DIR }}
@@ -269,18 +279,18 @@ jobs:
           set -euo pipefail
           # 未設定があってもすぐ止めず、すべて出力してから最後に失敗させる。
           missing=0
-          for v in APP_DIR AWS_REGION DOMAIN EC2_INSTANCE_ID; do
+          for name in APP_DIR AWS_REGION DOMAIN EC2_INSTANCE_ID; do
             # 値は出力せず空判定のみ（変数・シークレットとも値をログに出さない方針）。
-            if [ -z "${!v}" ]; then
-              echo "::error::リポジトリ変数 $v が未設定です（Settings → Secrets and variables → Actions → Variables）" >&2
+            if [ -z "${!name}" ]; then
+              echo "::error::リポジトリ変数$nameが未設定です（Settings → Secrets and variables → Actions → Variables）" >&2
               missing=1
             fi
           done
-          if [ -z "${AWS_ROLE_ARN}" ]; then
-            echo "::error::リポジトリシークレット AWS_ROLE_ARN が未設定です（Settings → Secrets and variables → Actions → Secrets）" >&2
+          if [ -z "$AWS_ROLE_ARN" ]; then
+            echo "::error::リポジトリシークレットAWS_ROLE_ARNが未設定です（Settings → Secrets and variables → Actions → Secrets）" >&2
             missing=1
           fi
-          if [ "$missing" -ne 0 ]; then
+          if [ "$missing" != 0 ]; then
             exit 1
           fi
 
@@ -293,58 +303,58 @@ jobs:
 
       # ── リポジトリを取得 ──────────────────────────────────────────────────────────────────────
       #    docker-compose.yml のホスト配布と、次ステップの git ls-remote の両方に必要。
-      - name: Checkout repository
+      - name: Check out repository
         uses: actions/checkout@v6
 
       # ── stale デプロイの抑止 ──────────────────────────────────────────────────────────────────
       #    deploy は直列化されるが実行順は保証されず、先発ランの deploy が後発より後に走ると
-      #    古い digest で上書きされる。本ランの SHA がブランチ先端でなければデプロイをスキップし、
+      #    旧 digest で上書きされる。本ランの SHA がブランチ先端でなければデプロイをスキップし、
       #    後発ランが deploy まで到達した場合に限り最新を反映する。
-      - name: Skip if a newer commit exists on the branch
+      - name: Check if this commit is the latest on the branch
         id: staleness
         env:
           BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           # ブランチ先端のリモート最新 SHA。認証済み origin を使うので fetch-depth に依存しない。
-          # ls-remote 失敗時も set -e で止めず空扱いにし、下の -z 判定（安全側で続行）へ委ねる。
-          latest=$(git ls-remote origin "refs/heads/${BRANCH}" | cut -f1) || latest=""
-          if [ -z "$latest" ]; then
-            echo "::warning::${BRANCH} の最新 SHA を取得できなかったため、安全側でデプロイを続行します" >&2
+          # ls-remote 失敗時も set -e の即中断を避けて空扱いにし、下の -z 判定（安全側で続行）へ委ねる。
+          latest_sha=$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1) || latest_sha=""
+          if [ -z "$latest_sha" ]; then
+            echo "::warning::$BRANCHの最新SHAを取得できなかったため、安全側でデプロイを続行します" >&2
             echo "is_latest=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if [ "$latest" != "$GITHUB_SHA" ]; then
-            echo "::notice::本ラン(${GITHUB_SHA:0:7})は ${BRANCH} の最新(${latest:0:7})ではないため、デプロイをスキップして以降のランに委ねます"
+          if [ "$latest_sha" != "$GITHUB_SHA" ]; then
+            echo "::notice::本ラン（${GITHUB_SHA:0:7}）は$BRANCHの最新（${latest_sha:0:7}）ではないため、デプロイをスキップして以降のランに委ねます"
             echo "is_latest=false" >> "$GITHUB_OUTPUT"
           else
             echo "is_latest=true" >> "$GITHUB_OUTPUT"
           fi
 
       # ── SSM Run Command で EC2 の compose を digest 固定で入れ替え ────────────────────────────
-      #      push が出力した digest 固定参照（…@sha256:...）で app/proxy を固定＝タグ上書きに
-      #      左右されず成果物そのものをデプロイ。docker-compose.yml も base64 で送りホストへ書き出す。
+      #    push が出力した digest 固定参照（…@sha256:…）で app / proxy を固定＝タグ上書きに左右されず
+      #    成果物そのものをデプロイ。docker-compose.yml も base64 で送りホストへ書き出す。
       - name: Deploy to EC2 via SSM
         id: deploy
         if: steps.staleness.outputs.is_latest == 'true'
         env:
-          APP_DIR:     ${{ vars.APP_DIR }}
-          DOMAIN:      ${{ vars.DOMAIN }}
-          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
-          APP_IMAGE:   ${{ needs.push.outputs.app_image }}
-          PROXY_IMAGE: ${{ needs.push.outputs.proxy_image }}
+          APP_DIR:         ${{ vars.APP_DIR }}
+          DOMAIN:          ${{ vars.DOMAIN }}
+          EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          APP_IMAGE:       ${{ needs.push.outputs.app_image }}
+          PROXY_IMAGE:     ${{ needs.push.outputs.proxy_image }}
         run: |
           set -euo pipefail
 
-          # ステップ終了時刻(JST)を Summary へ渡す。EXIT トラップなので成功/失敗どちらでも発火。
+          # ステップ終了時刻（JST）をサマリー出力へ渡す。EXIT トラップなので成功 / 失敗どちらでも発火。
           trap 'echo "finished_at=$(TZ=Asia/Tokyo date "+%Y/%m/%d %H:%M:%S")" >> "$GITHUB_OUTPUT"' EXIT
 
-          # docker-compose.yml を改行なし base64 でホストへ渡す（JSON/シェルの引用を壊さない）。
+          # docker-compose.yml を改行なし base64 でホストへ渡す（JSON / シェルの引用を壊さない）。
           COMPOSE_B64=$(base64 -w0 docker-compose.yml)
 
           # ホスト実行スクリプトを1本にまとめ base64 で送って "decode | bash"。
-          # 分岐・ループ（スモークテスト/ロールバック）を含むためスクリプト化する。
-          #   先頭で runner 側の値を %q 安全に定義 → 以降は quoted heredoc(<<'EOF') で温存。
+          # 分岐・ループ（スモークテスト / ロールバック）を含むためスクリプト化する。
+          #   先頭で runner 側の値を %q 安全に定義 → 以降は quoted heredoc（<<'EOF'）で温存。
           {
             printf 'APP_DIR=%q\n'     "$APP_DIR"
             printf 'DOMAIN=%q\n'      "$DOMAIN"
@@ -355,11 +365,11 @@ jobs:
           set -euo pipefail
           cd "$APP_DIR"
 
-          # 現行の構成（.env と compose）を退避（ロールバック用。初回は無くてもよい）
+          # 現行の構成（.env と compose）を退避（ロールバック用。初回は無くてもよい）。
           cp -f .env .env.bak 2>/dev/null || true
           cp -f docker-compose.yml docker-compose.yml.bak 2>/dev/null || true
 
-          # compose をデコードして配置 → app/proxy を digest 固定の参照として .env に書き出す
+          # compose をデコードして配置 → app / proxy を digest 固定参照として .env に書き出す。
           echo "$COMPOSE_B64" | base64 -d > docker-compose.yml
           printf 'APP_IMAGE=%s\nPROXY_IMAGE=%s\nDOMAIN=%s\n' "$APP_IMAGE" "$PROXY_IMAGE" "$DOMAIN" > .env
 
@@ -367,14 +377,15 @@ jobs:
           # ロールバックへ回す（up -d は service_healthy 待ちで、unhealthy 時は非0で返り得る）。
           deploy_ok=0
           if docker compose pull && docker compose up -d; then
-            # E2E スモークテスト（TLS→proxy→app）。2秒間隔で最大30回試行
-            # （curl のタイムアウト5秒込みで最長 ~3.5分）。
+            # E2E スモークテスト（TLS → proxy → app）。2秒間隔で最大30回試行
+            # （curl のタイムアウト5秒込みで最長約3.5分）。
             # --resolve でループバック経由でも本物の証明書名で検証する。
             for _ in $(seq 1 30); do
               if curl -fsS --max-time 5 \
-                   --resolve "$DOMAIN:443:127.0.0.1" \
-                   "https://$DOMAIN/api/today" >/dev/null; then
-                deploy_ok=1; break
+                  --resolve "$DOMAIN:443:127.0.0.1" \
+                  "https://$DOMAIN/api/today" >/dev/null; then
+                deploy_ok=1
+                break
               fi
               sleep 2
             done
@@ -385,7 +396,9 @@ jobs:
           #    非0終了する（初回のみ手動復旧が前提）。
           if [ "$deploy_ok" != 1 ]; then
             echo "デプロイに失敗したため、直前の構成への復旧を試みます" >&2
-            if [ -f docker-compose.yml.bak ]; then mv -f docker-compose.yml.bak docker-compose.yml; fi
+            if [ -f docker-compose.yml.bak ]; then
+              mv -f docker-compose.yml.bak docker-compose.yml
+            fi
             rolled_back=0
             if [ -f .env.bak ]; then
               mv -f .env.bak .env
@@ -398,16 +411,16 @@ jobs:
               rolled_back=1
             fi
             if [ "$rolled_back" = 1 ]; then
-              # ロールバック後の .env は旧 digest。新イメージが旧と異なる時だけ削除する
+              # ロールバック後の .env は旧 digest。新イメージが旧と異なるときだけ削除する
               # （同一 digest 再デプロイ時は稼働中を消さない）。digest 参照は prune 対象外のため rm。
-              # grep が no-match で exit 1 → set -e 中断を防ぐため || true で空に。
-              old_app=$(grep -E '^APP_IMAGE=' .env | head -n1 | cut -d= -f2- || true)
-              old_proxy=$(grep -E '^PROXY_IMAGE=' .env | head -n1 | cut -d= -f2- || true)
-              [ "$old_app"   != "$APP_IMAGE"   ] && docker image rm -f "$APP_IMAGE"   >/dev/null 2>&1 || true
-              [ "$old_proxy" != "$PROXY_IMAGE" ] && docker image rm -f "$PROXY_IMAGE" >/dev/null 2>&1 || true
+              # grep が no-match で exit 1 → set -e の即中断を避けるため || true で空に。
+              old_app_image=$(grep -E '^APP_IMAGE=' .env | head -n1 | cut -d= -f2- || true)
+              old_proxy_image=$(grep -E '^PROXY_IMAGE=' .env | head -n1 | cut -d= -f2- || true)
+              [ "$old_app_image"   != "$APP_IMAGE"   ] && docker image rm -f "$APP_IMAGE"   >/dev/null 2>&1 || true
+              [ "$old_proxy_image" != "$PROXY_IMAGE" ] && docker image rm -f "$PROXY_IMAGE" >/dev/null 2>&1 || true
             else
               # ロールバック先が無い（初回等）。起動済みなら壊れた新構成を停止（未起動でも down は無害）。
-              echo "ロールバック先が無いため、新構成を停止します（手動復旧が必要）" >&2
+              echo "直前の構成が無いため、新構成を停止します（手動復旧が必要）" >&2
               docker compose down || true
             fi
             exit 1
@@ -417,11 +430,11 @@ jobs:
           # digest 参照は prune 対象外のため明示削除。同一 digest 再デプロイでは
           # 稼働中を消さないよう必ず新旧の差分を確認する。
           if [ -f .env.bak ]; then
-            # grep が no-match で exit 1 → set -e 中断を防ぐため || true で空に。
-            old_app=$(grep -E '^APP_IMAGE=' .env.bak | head -n1 | cut -d= -f2- || true)
-            old_proxy=$(grep -E '^PROXY_IMAGE=' .env.bak | head -n1 | cut -d= -f2- || true)
-            [ -n "$old_app" ]   && [ "$old_app" != "$APP_IMAGE" ]     && docker image rm -f "$old_app"   >/dev/null 2>&1 || true
-            [ -n "$old_proxy" ] && [ "$old_proxy" != "$PROXY_IMAGE" ] && docker image rm -f "$old_proxy" >/dev/null 2>&1 || true
+            # grep が no-match で exit 1 → set -e の即中断を避けるため || true で空に。
+            old_app_image=$(grep -E '^APP_IMAGE=' .env.bak | head -n1 | cut -d= -f2- || true)
+            old_proxy_image=$(grep -E '^PROXY_IMAGE=' .env.bak | head -n1 | cut -d= -f2- || true)
+            [ -n "$old_app_image" ]   && [ "$old_app_image" != "$APP_IMAGE" ]     && docker image rm -f "$old_app_image"   >/dev/null 2>&1 || true
+            [ -n "$old_proxy_image" ] && [ "$old_proxy_image" != "$PROXY_IMAGE" ] && docker image rm -f "$old_proxy_image" >/dev/null 2>&1 || true
           fi
 
           rm -f .env.bak docker-compose.yml.bak
@@ -437,69 +450,69 @@ jobs:
           cat > params.json <<JSON
           {
             "commands": [
-              "echo ${REMOTE_B64} | base64 -d | bash"
+              "echo $REMOTE_B64 | base64 -d | bash"
             ],
             "executionTimeout": ["600"]
           }
           JSON
 
           # --cloud-watch-output-config: 全文ログを CloudWatch Logs へ
-          #   （get-command-invocation の出力は先頭 24,000 文字で truncate されるため原因調査用に併用）。
-          CMD_ID=$(aws ssm send-command \
-            --instance-ids "${INSTANCE_ID}" \
-            --document-name "AWS-RunShellScript" \
-            --comment "deploy ${GITHUB_REPOSITORY} ${GITHUB_SHA}" \
+          #   （get-command-invocation の出力は先頭24,000文字で truncate されるため原因調査用に併用）。
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$EC2_INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "deploy $GITHUB_REPOSITORY $GITHUB_SHA" \
             --parameters file://params.json \
             --cloud-watch-output-config CloudWatchOutputEnabled=true \
-            --query "Command.CommandId" --output text)
-          echo "SSM Command ID: ${CMD_ID}"
+            --query Command.CommandId --output text)
+          echo "SSM Command ID: $COMMAND_ID"
 
-          # 完了までポーリング（最大 ~11分）。aws ssm wait の既定(約100秒)に依存せず、
-          # ホスト側 executionTimeout(600s) より長く待って終端状態(TimedOut 等)を確実に拾う。
+          # 完了までポーリング（最長約11分）。aws ssm wait の既定（約100秒）に依存せず、
+          # ホスト側 executionTimeout（600秒）より長く待って終端状態（TimedOut 等）を確実に拾う。
           # 送信直後は invocation 未作成のことがあるため、取得失敗時は Pending 扱いで継続。
           STATUS="Pending"
           for _ in $(seq 1 132); do
             STATUS=$(aws ssm get-command-invocation \
-              --command-id "${CMD_ID}" --instance-id "${INSTANCE_ID}" \
+              --command-id "$COMMAND_ID" --instance-id "$EC2_INSTANCE_ID" \
               --query Status --output text 2>/dev/null || echo "Pending")
-            case "${STATUS}" in
+            case "$STATUS" in
               Success|Failed|Cancelled|TimedOut) break ;;
             esac
             sleep 5
           done
 
           echo "----- リモート標準出力 -----"
-          # 表示用。取得失敗で成功デプロイを落とさないよう || true でガード
+          # 表示用。取得失敗で成功デプロイを落とさないよう || true でガード。
           aws ssm get-command-invocation \
-            --command-id "${CMD_ID}" --instance-id "${INSTANCE_ID}" \
+            --command-id "$COMMAND_ID" --instance-id "$EC2_INSTANCE_ID" \
             --query StandardOutputContent --output text || true
 
-          if [ "${STATUS}" != "Success" ]; then
-            # 非終端（Pending/InProgress）で抜けるのは EC2 停止・SSM 不達・API 継続失敗の場合で、
+          if [ "$STATUS" != Success ]; then
+            # 非終端（Pending / InProgress）で抜けるのは EC2 停止・SSM 不達・API 継続失敗の場合で、
             # 実行して失敗したのではなく結果が不明。失敗と断定せず区別して出す。
-            case "${STATUS}" in
+            case "$STATUS" in
               Failed|Cancelled|TimedOut)
-                echo "::error::デプロイに失敗しました (Status=${STATUS})" >&2 ;;
+                echo "::error::デプロイに失敗しました（Status $STATUS）" >&2 ;;
               *)
-                echo "::error::デプロイの結果を確認できませんでした (Status=${STATUS})" >&2
+                echo "::error::デプロイの結果を確認できませんでした（Status $STATUS）" >&2
                 echo "result=unknown" >> "$GITHUB_OUTPUT" ;;
             esac
             echo "----- リモート標準エラー -----"
             aws ssm get-command-invocation \
-              --command-id "${CMD_ID}" --instance-id "${INSTANCE_ID}" \
+              --command-id "$COMMAND_ID" --instance-id "$EC2_INSTANCE_ID" \
               --query StandardErrorContent --output text
             exit 1
           fi
           echo "デプロイ成功"
-          echo "  app:   ${APP_IMAGE}"
-          echo "  proxy: ${PROXY_IMAGE}"
+          echo "  app:   $APP_IMAGE"
+          echo "  proxy: $PROXY_IMAGE"
 
       # ── デプロイ結果をサマリーに出力 ───────────────────────────────────────────────────────────
-      - name: Summary
-        # is_latest=true（本ランが最新でデプロイを試行した）ときだけ出す。
+      - name: Write deployment summary
+        # 本ランがデプロイ対象（is_latest=true）のときだけ出す。
         #   - stale スキップ（is_latest=false）: 「デプロイ済み」と誤表示しないよう出さない。
-        #   - staleness 到達前の失敗（検証/認証/checkout）: 出力が空 → 出さない（誤表示防止）。
-        #   - デプロイ失敗（is_latest=true のままエラー）: 原因調査のため出力する。
+        #   - staleness 到達前の失敗（検証 / 認証 / checkout）: 出力が空 → 出さない（誤表示防止）。
+        #   - デプロイ失敗（is_latest=true のままエラー）: 原因調査のため出す。
         if: always() && steps.staleness.outputs.is_latest == 'true'
         env:
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
@@ -508,6 +521,7 @@ jobs:
           APP_IMAGE:      ${{ needs.push.outputs.app_image }}
           PROXY_IMAGE:    ${{ needs.push.outputs.proxy_image }}
         run: |
+          set -euo pipefail
           case "$DEPLOY_OUTCOME" in
             success)   RESULT="✅ 成功" ;;
             failure)   RESULT="❌ 失敗" ;;
@@ -515,15 +529,17 @@ jobs:
             skipped)   RESULT="⚠️ 未実行" ;;
             *)         RESULT="⚠️ $DEPLOY_OUTCOME" ;;
           esac
-          # 非終端で終わった場合は失敗と断定できないため上書きする
-          if [ "${DEPLOY_RESULT:-}" = unknown ]; then RESULT="⚠️ 不明"; fi
+          # 非終端で終わった場合は失敗と断定できないため上書きする。
+          if [ "$DEPLOY_RESULT" = unknown ]; then
+            RESULT="⚠️ 不明"
+          fi
           # 出力は「ラベル<br>値」を空行区切り。GFM は単一改行を空白に畳むため <br> で改行する。
           {
-            echo "**デプロイ結果**<br>${RESULT}"
+            echo "**デプロイ結果**<br>$RESULT"
             echo ""
-            echo "**終了時刻**<br>${FINISHED_AT}"
+            echo "**終了時刻**<br>$FINISHED_AT"
             echo ""
-            echo "**App**<br>${APP_IMAGE}"
+            echo "**app**<br>$APP_IMAGE"
             echo ""
-            echo "**Proxy**<br>${PROXY_IMAGE}"
+            echo "**proxy**<br>$PROXY_IMAGE"
           } >> "$GITHUB_STEP_SUMMARY"
