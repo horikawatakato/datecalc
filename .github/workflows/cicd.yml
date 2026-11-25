@@ -43,10 +43,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.12'   # app/Dockerfile の python:3.12-slim に合わせる
           cache: pip
@@ -86,7 +86,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Extract metadata for app image
         id: meta-app
@@ -183,7 +183,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download app image artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: app-image
           path: /tmp
@@ -212,7 +212,7 @@ jobs:
           echo "image=$image" >> "$GITHUB_OUTPUT"
 
       - name: Download proxy image artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: proxy-image
           path: /tmp
@@ -304,7 +304,7 @@ jobs:
       # ── リポジトリを取得 ──────────────────────────────────────────────────────────────────────
       #    docker-compose.yml のホスト配布と、次ステップの git ls-remote の両方に必要。
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       # ── stale デプロイの抑止 ──────────────────────────────────────────────────────────────────
       #    deploy は直列化されるが実行順は保証されず、先発ランの deploy が後発より後に走ると
