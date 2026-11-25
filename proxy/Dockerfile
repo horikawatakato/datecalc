@@ -2,7 +2,7 @@
 #   keepalive（upstream ブロック）/ proxy_http_version 1.1 / proxy_set_header Connection ""
 #   の 3 つを省いている。下げても nginx -t は通るが、upstream 接続が HTTP/1.0 + Connection: close
 #   に退行し、upstream keepalive が黙って無効になる。
-FROM nginx:1.30.7-alpine
+FROM nginx:1.30.8-alpine
 
 # LABEL / ARG は置かない。理由は2つ:
 #   - OCI ラベルは CI が --label で渡す（docker/metadata-action）ため、同名 LABEL は上書きされ届かない
